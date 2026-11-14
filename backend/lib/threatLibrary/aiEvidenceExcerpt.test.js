@@ -156,7 +156,7 @@ test('excerpt: defanged / source spellings are located; unknown spelling falls b
 });
 
 test('contract: candidates stored by an earlier extraction contract are rebuilt, not reused', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v66');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v67');
   const base = { documentRebuilt: false, existingCount: 12, resumePreferred: true, refreshCandidates: false };
   assert.deepEqual(decideCandidateReuse({ ...base, priorExtractionVersion: 'tl-candidates-v23' }), {
     extractionChanged: true,
@@ -242,7 +242,7 @@ test('contract: candidates stored by an earlier extraction contract are rebuilt,
     extractionChanged: true,
     shouldReuseCandidates: false
   });
-  assert.deepEqual(decideCandidateReuse({ ...base, priorExtractionVersion: 'tl-candidates-v66' }), {
+  assert.deepEqual(decideCandidateReuse({ ...base, priorExtractionVersion: 'tl-candidates-v67' }), {
     extractionChanged: false,
     shouldReuseCandidates: true
   });

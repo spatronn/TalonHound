@@ -1,0 +1,106 @@
+{
+ "report": {
+  "id": 35880,
+  "public_id": "2cb3f780-4abb-4a8a-ad97-eae858ccd0a9",
+  "title": "Exchange for breakfast: Turla’s Cereal tricks are not for kids",
+  "import_status": "review_required",
+  "analysis_status": "review_required",
+  "published_at": "2026-11-10T00:00:00+00:00"
+ },
+ "extraction_run": {
+  "run_public_id": "a64d175f-a62b-494f-ac12-af63b4d1b7d6",
+  "run_type": "initial",
+  "is_first_pass": true,
+  "operational_status": "completed",
+  "contract_fingerprint": "e133fab1e4ec284c2b8991e7d3511232",
+  "contract_bundle": {
+   "pdf": "threat_library_pdf_v7",
+   "html": "threat_library_html_v11",
+   "zones": "tl-zones-v18",
+   "tables": "tl-table-v19",
+   "quality": "tl-quality-v16",
+   "candidates": "tl-candidates-v66",
+   "membership": "tl-membership-decision-v3",
+   "dispositions": "tl-dispositions-v1",
+   "scope_engine": "tl-scope-engine-section-tree-v3",
+   "section_tree": "tl-section-tree-v19",
+   "type_resolver": "tl-type-resolver-v27",
+   "ioc_source_scope": "tl-ioc-source-scope-v8",
+   "evidence_integrity": "tl-evidence-integrity-v3",
+   "structured_sources": "tl-ioc-source-structured-v2"
+  },
+  "completed_at": "2026-11-13T19:50:02.708056+00:00",
+  "counts": {
+   "members": 0,
+   "candidates": 1,
+   "dispositions": {
+    "total": 8,
+    "invalid": 3,
+    "unsupported": 4,
+    "context_only": 1,
+    "undispositioned": 0
+   },
+   "needs_review": 0,
+   "linked_members": 0,
+   "dropped_regions": 8,
+   "dispositions_truncated": false,
+   "dropped_significant_observables": 2
+  }
+ },
+ "source_artifact": {
+  "type": "url_fetch",
+  "file": "source.html",
+  "mime": "text/html; charset=UTF-8",
+  "size": 95215,
+  "sha256": "7ec988924225e14973a816c8a09c3bb6a9e66fa00ab70073cc8d58c8ebef476f",
+  "storage_key": "reports/35880/7ec988924225e14973a816c8a09c3bb6a9e66fa00ab70073cc8d58c8ebef476f.html",
+  "fetched_at": "2026-11-13T19:41:56.173+00:00"
+ },
+ "summary": {
+  "candidates": 1,
+  "members": 0,
+  "needs_review": 0,
+  "approved_or_decided": 0
+ },
+ "linked_ioc_sources": [
+  {
+   "id": 303,
+   "original_url": "https://github.com/eset/malware-ioc/tree/master/turla",
+   "source_type": "github_dir",
+   "discovery_method": "auto",
+   "lifecycle_status": "discovered",
+   "inspection_status": "pending",
+   "extraction_status": "pending",
+   "error_code": null,
+   "err": null
+  },
+  {
+   "id": 304,
+   "original_url": "https://web-assets.esetstatic.com/wls/en/papers/white-papers/turla-cereal-tricks.pdf",
+   "source_type": "pdf",
+   "discovery_method": "auto",
+   "lifecycle_status": "discovered",
+   "inspection_status": "pending",
+   "extraction_status": "pending",
+   "error_code": null,
+   "err": null
+  }
+ ],
+ "candidates": [
+  {
+   "id": 50707,
+   "type": "domain",
+   "value": "eset.com",
+   "original_value": "eset.com",
+   "membership_outcome": "context_only",
+   "assessment": "context_only",
+   "role": "reference",
+   "source_assertion": "reference_only",
+   "section": "report_body",
+   "review_status": "pending",
+   "rule_id": "R20_publisher_stance",
+   "reason_code": "context_only_email_domain",
+   "evidence_excerpt": "For any inquiries about our research published on WeLiveSecurity, please contact us at threatintel@eset.com. ESET Research offers private APT intelligence reports and data feeds. For any inquiries about this service, visit the ESET Threat Intelligence page."
+  }
+ ]
+}

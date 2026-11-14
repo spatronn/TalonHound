@@ -40,10 +40,16 @@ import { createTableBlock } from '../canonicalDocument.js';
  * v11 (review queue 35858–35869): script / style nested in a dropped text
  * region (a footer's inline form-widget script with an "apiKey" hex) is counted
  * but never makes the region significant; blocks are unchanged.
- * Document extractor contract is threat_library_html_v11 so Refresh rebuilds
- * retained HTML under the current source-accounting contract.
+ * v12 (import audit 35880–35889): React streaming SSR pages (Next.js App
+ * Router) send deferred content as `<div hidden id="S:x">` segments at the end
+ * of the document, moved into `<template id="P:x">` / Suspense `B:x`
+ * placeholders by inline `$RS` / `$RC` calls. The segments are put back where
+ * the page renders them, so the tail rows of a table stay in that table and
+ * under its heading instead of trailing the article as detached blocks.
+ * Document extractor contract is threat_library_html_v12 so Refresh rebuilds
+ * retained HTML under the current contract.
  */
-export const HTML_BLOCKS_VERSION = 'threat_library_html_v11';
+export const HTML_BLOCKS_VERSION = 'threat_library_html_v12';
 
 export function stripTags(s) {
   return String(s || '').replace(/<[^>]+>/g, ' ');
@@ -142,7 +148,119 @@ export function decodeCloudflareEmails(html) {
  * @param {string} html
  */
 export function parseHtml(html) {
-  return parseDocument(decodeCloudflareEmails(html), { decodeEntities: true, lowerCaseTags: true, lowerCaseAttributeNames: true });
+  const dom = parseDocument(decodeCloudflareEmails(html), { decodeEntities: true, lowerCaseTags: true, lowerCaseAttributeNames: true });
+  resolveStreamingSegments(dom);
+  return dom;
+}
+
+/** React streaming SSR instructions: `$RS("S:x","P:x")` and `$RC("B:x","S:x")`. */
+const STREAM_SEGMENT_CALL_RE = /\$RS\(\s*["']([^"']+)["']\s*,\s*["']([^"']+)["']\s*\)/g;
+const STREAM_BOUNDARY_CALL_RE = /\$RC\(\s*["']([^"']+)["']\s*,\s*["']([^"']+)["']\s*\)/g;
+const STREAM_SEGMENT_ID_RE = /^S:[\w-]+$/;
+
+function relinkChildren(parent) {
+  const kids = parent.children || [];
+  for (let i = 0; i < kids.length; i += 1) {
+    kids[i].parent = parent;
+    kids[i].prev = kids[i - 1] || null;
+    kids[i].next = kids[i + 1] || null;
+  }
+}
+
+/** Replace `node` (and the `extra` siblings after it) with `replacement` nodes. */
+function replaceNode(node, replacement, extra = 0) {
+  const parent = node?.parent;
+  if (!parent || !Array.isArray(parent.children)) return false;
+  const at = parent.children.indexOf(node);
+  if (at < 0) return false;
+  parent.children.splice(at, 1 + extra, ...replacement);
+  relinkChildren(parent);
+  return true;
+}
+
+function detachNode(node) {
+  const parent = node?.parent;
+  if (!parent || !Array.isArray(parent.children)) return;
+  const at = parent.children.indexOf(node);
+  if (at >= 0) {
+    parent.children.splice(at, 1);
+    relinkChildren(parent);
+  }
+}
+
+/**
+ * Put React streaming SSR segments back where the page renders them (v12).
+ * The server streams deferred subtrees as `<div hidden id="S:x">` (in table
+ * context `<table hidden><tbody id="S:x">` / `<tr id="S:x">`) after the main
+ * markup; inline scripts then call `$RS("S:x","P:x")` (replace the
+ * `<template id="P:x">` placeholder with the segment's children) or
+ * `$RC("B:x","S:x")` (replace a Suspense boundary's fallback with them). Read
+ * in source order, those segments trail the article, detached from the table
+ * and section that own them. Only explicit instructions are applied; a page
+ * without them is untouched. Mutates `dom`.
+ * @param {object} dom htmlparser2 document
+ */
+export function resolveStreamingSegments(dom) {
+  /** @type {{ kind: 'segment'|'boundary', target: string, segment: string }[]} */
+  const calls = [];
+  const segments = new Map();
+  const templates = new Map();
+  const walk = (node) => {
+    for (const c of node?.children || []) {
+      // htmlparser2 types <script> nodes as 'script', not 'tag'.
+      if (c?.type === 'script' || (isElement(c) && tagOf(c) === 'script')) {
+        const text = (c.children || []).map((x) => x.data || '').join('');
+        if (text.includes('$RS') || text.includes('$RC')) {
+          for (const m of text.matchAll(STREAM_SEGMENT_CALL_RE)) calls.push({ kind: 'segment', segment: m[1], target: m[2] });
+          for (const m of text.matchAll(STREAM_BOUNDARY_CALL_RE)) calls.push({ kind: 'boundary', target: m[1], segment: m[2] });
+        }
+        continue;
+      }
+      if (isElement(c)) {
+        const t = tagOf(c);
+        const id = attr(c, 'id');
+        // `<div hidden id="S:x">`, or in table context `<table hidden><tbody id="S:x">`
+        // / `<tr id="S:x">`: the segment is the element the instruction names.
+        if (id && STREAM_SEGMENT_ID_RE.test(id) && !segments.has(id)) {
+          segments.set(id, c);
+        } else if (t === 'template' && id && !templates.has(id)) {
+          templates.set(id, c);
+        }
+      }
+      walk(c);
+    }
+  };
+  walk(dom);
+  if (!calls.length || !segments.size) return { resolved: 0 };
+  let resolved = 0;
+  for (const call of calls) {
+    const seg = segments.get(call.segment);
+    const placeholder = templates.get(call.target);
+    if (!seg || !placeholder || !seg.parent || !placeholder.parent) continue;
+    // A segment never moves into its own subtree.
+    let up = placeholder.parent;
+    while (up && up !== seg) up = up.parent;
+    if (up === seg) continue;
+    const moved = [...(seg.children || [])];
+    let extra = 0;
+    if (call.kind === 'boundary') {
+      // Suspense boundary: `<!--$?--><template id="B:x"></template>fallback<!--/$-->`.
+      // The fallback up to the boundary's closing comment is replaced too.
+      let n = placeholder.next;
+      let count = 0;
+      while (n && !(n.type === 'comment' && String(n.data || '').trim() === '/$')) {
+        count += 1;
+        n = n.next;
+      }
+      if (n) extra = count;
+    }
+    detachNode(seg);
+    if (replaceNode(placeholder, moved, extra)) {
+      resolved += 1;
+      segments.delete(call.segment);
+    }
+  }
+  return { resolved };
 }
 
 function isElement(node) {

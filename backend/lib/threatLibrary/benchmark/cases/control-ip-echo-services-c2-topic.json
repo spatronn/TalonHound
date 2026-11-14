@@ -1,0 +1,33 @@
+{
+  "id": "control-ip-echo-services-c2-topic",
+  "title": "Control: IP-echo services named by a public-IP lead-in stay Context Only under an inherited C2 scope",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": ["control", "list_stance", "ip_echo", "c2_topic", "mode_a"],
+  "source": {
+    "kind": "html_file",
+    "path": "control-ip-echo-services-c2-topic.html",
+    "url": "https://research.example/blog/miner-ip-echo-services/"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed from import audit 35880-35889 (35881: api.ipify.org / ifconfig.me/ip / icanhazip.com / checkip.amazonaws.com, queried 'to establish the host's public IP', were explicit C2 Indicators through the C2-titled analysis heading)",
+      "verified_by": "construction",
+      "verified_at": "2026-11-14"
+    },
+    "indicators": [
+      { "type": "domain", "value": "abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuv.onion", "assertion": "explicit" },
+      { "type": "sha256", "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc01", "assertion": "explicit" }
+    ],
+    "context_only": [
+      { "type": "domain", "value": "api.echo-one.example" },
+      { "type": "url", "value": "echo-two.example/ip" },
+      { "type": "domain", "value": "echo-three.example" }
+    ],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "sections": [
+      { "heading": "Observables and indicators", "expected": "authoritative" }
+    ]
+  }
+}

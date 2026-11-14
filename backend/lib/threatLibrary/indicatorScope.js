@@ -783,6 +783,38 @@ const LEAD_OBJECT_SPLIT_RE =
 const PROVIDER_LIST_LEAD_RE =
   /\b(?:providers?|services?|explorers?|resolvers?|platforms?|instances?)\s*(?:[(（][^)）]*[)）])?\s*[:：]?\s*$/i;
 
+/**
+ * A list lead-in that says the listed services are queried to learn the
+ * host's own public address ("To establish the host's public IP, SANSAR
+ * queries four external services in order, …:"): IP-echo utilities, not
+ * operator infrastructure (tl-candidates-v67).
+ */
+const PUBLIC_IP_PURPOSE_RE =
+  /\b(?:establish|determine|obtain|get|learn|discover|identify|retrieve|fetch|find|check|resolve)\w*\s+(?:the\s+|its\s+|their\s+|a\s+)?(?:(?:victim|host|machine|device|system|bot|client|infected\s+\w+)(?:['’]s)?\s+)?(?:own\s+)?(?:public|external|wan|egress|outbound)\s+ip(?:v4|v6)?(?:\s+address(?:es)?)?\b/i;
+const QUERIED_SERVICE_NOUN_RE = /\b(?:services?|sites?|websites?|apis?|endpoints?|providers?|lookups?)\b/i;
+
+/**
+ * "To establish the host's public IP, <malware> queries four external
+ * services …:" — a colon lead-in naming the listed values as the IP-echo
+ * services the malware asks (tl-candidates-v67). Only the words that qualify
+ * the services can make them the operator's ("three attacker-controlled
+ * services"); the sentence subject is the malware itself ("the loader queries").
+ * @param {string} text
+ */
+function ipEchoLeadIn(text) {
+  const t = String(text || '').trim();
+  if (!/[:：]\s*$/.test(t)) return false;
+  const s = firstSentence(t);
+  if (!s || CONTRASTIVE_STANCE_RE.test(s) || STANCE_OVERRIDE_RE.test(s)) return false;
+  const purpose = PUBLIC_IP_PURPOSE_RE.exec(s);
+  if (!purpose) return false;
+  const tail = s.slice(purpose.index + purpose[0].length);
+  const noun = QUERIED_SERVICE_NOUN_RE.exec(tail);
+  if (!noun) return false;
+  const qualifier = tail.slice(0, noun.index).split(/\s+/).slice(-4).join(' ');
+  return !MALICIOUS_VALUE_ROLE_RE.test(`${qualifier} ${noun[0]}`);
+}
+
 /** "These endpoints are …" / "The above domains are …": a sentence about the preceding list. */
 const LIST_ANAPHORA_RE =
   /^\s*(?:these|those|the\s+(?:above|listed|preceding|following)|all\s+(?:of\s+)?(?:these|the\s+above))\s+(?:\w+\s+){0,3}?(?:endpoints?|domains?|urls?|uris?|services?|hosts?|hostnames?|addresses|ips?|servers?|providers?|resolvers?|sites?|platforms?|nodes?)\b/i;
@@ -819,6 +851,7 @@ export function annotateListStances(blocks) {
     if (!s || CONTRASTIVE_STANCE_RE.test(s)) return false;
     if (BENIGN_COMPONENT_RE.test(s) && !BENIGN_NEGATION_RE.test(s)) return true;
     if (statesNonMaliciousStance(s)) return true;
+    if (ipEchoLeadIn(text)) return true;
     // "… C2 lookup through three Blockscout providers:" names the listed values
     // as the providers relied on. Only the object phrase is read; the sentence
     // subject is the malware itself.
@@ -846,6 +879,22 @@ export function annotateListStances(blocks) {
       let j = i;
       while (j + 1 < list.length && isValueLine(list[j + 1])) j += 1;
       if (BENIGN_COMPONENT_RE.test(h) && !BENIGN_NEGATION_RE.test(h) && !CONTRASTIVE_STANCE_RE.test(h)) {
+        for (let k = i; k <= j; k += 1) list[k].list_stance = 'non_malicious';
+      }
+      i = j;
+      continue;
+    }
+    // Paragraph value lines (one observable per line) introduced by a lead-in
+    // paragraph that ends with a colon: the lead-in is their stance, as for a
+    // list (tl-candidates-v67).
+    if (isValueLine(list[i]) && !isListBlock(list[i]) && !isValueLine(list[i - 1]) && !isListBlock(list[i - 1])) {
+      let j = i;
+      while (j + 1 < list.length && isValueLine(list[j + 1]) && !isListBlock(list[j + 1])) j += 1;
+      const leadBlock = list[i - 1];
+      const leadText = leadBlock && leadBlock.type === 'paragraph' ? String(leadBlock.text || '') : '';
+      // Only the IP-echo purpose reading: the general list-stance cues were
+      // never applied to paragraph lines and stay list-only.
+      if (leadText && ipEchoLeadIn(leadText)) {
         for (let k = i; k <= j; k += 1) list[k].list_stance = 'non_malicious';
       }
       i = j;

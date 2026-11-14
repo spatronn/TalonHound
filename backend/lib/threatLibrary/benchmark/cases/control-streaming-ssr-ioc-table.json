@@ -1,0 +1,31 @@
+{
+  "id": "control-streaming-ssr-ioc-table",
+  "title": "Control: IOC table rows streamed as React SSR segments stay in their IOC section",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": ["control", "html_extractor", "streaming_ssr", "mode_a"],
+  "source": {
+    "kind": "html_file",
+    "path": "control-streaming-ssr-ioc-table.html",
+    "url": "https://research.example/blog/streamed-ioc-table/"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed from import audit 35880-35889 (35888: a Next.js page streamed 24 of 28 'E. Network indicators' rows as hidden S:x segments moved by $RS into P:x placeholders; read in source order they trailed the article outside the IOC section)",
+      "verified_by": "construction",
+      "verified_at": "2026-11-14"
+    },
+    "indicators": [
+      { "type": "url", "value": "https://198.51.100.10/s", "assertion": "explicit" },
+      { "type": "ip", "value": "198.51.100.10", "assertion": "explicit" },
+      { "type": "domain", "value": "lookalike-signin.example", "assertion": "explicit" },
+      { "type": "ip", "value": "203.0.113.77", "assertion": "explicit" }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "sections": [
+      { "heading": "E. Network indicators", "expected": "authoritative" }
+    ]
+  }
+}

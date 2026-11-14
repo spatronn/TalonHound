@@ -320,7 +320,30 @@ export function readDocumentText(blocks, acc, ctx) {
         add(m[0], 'attack_technique', block, { form: standaloneForm });
       }
     }
-    for (const m of text.matchAll(DOMAIN_RE)) {
+    for (const m0 of text.matchAll(DOMAIN_RE)) {
+      let m = m0;
+      // A host inside a percent-encoded query string ("%7Cxmr-ru.pool.example%3A7029"):
+      // the two hex digits after "%" belong to the escape, not the hostname
+      // (tl-candidates-v67).
+      // Only an escape of a printable ASCII separator counts ("%7C", "%2F",
+      // "%3A"); "LIKE '%activation-…'" and printf "%08x" are not escapes. A
+      // double-encoded "%252F" escapes "%" first, then "2F".
+      if (m0.index > 0 && text[m0.index - 1] === '%') {
+        let skip = 0;
+        let rest = m0[0];
+        while (/^[0-9a-f]{2}/i.test(rest)) {
+          const code = parseInt(rest.slice(0, 2), 16);
+          const ch = String.fromCharCode(code);
+          if (code < 0x20 || code > 0x7e || /[A-Za-z0-9]/.test(ch)) break;
+          skip += 2;
+          rest = rest.slice(2);
+          if (code !== 0x25) break;
+        }
+        if (skip) {
+          if (!/^[a-z0-9]/i.test(rest) || !/\./.test(rest)) continue;
+          m = Object.assign([rest], { index: m0.index + skip });
+        }
+      }
       const start = m.index;
       const end = start + m[0].length;
       if (insideAnySpan(urlSpans, start, end) || insideAnySpan(consumed, start, end)) continue;
