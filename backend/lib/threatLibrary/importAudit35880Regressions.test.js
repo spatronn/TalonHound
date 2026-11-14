@@ -70,7 +70,7 @@ test('contract versions', () => {
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v20');
   assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v28');
   assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v13');
-  assert.equal(PUBLICATION_DATE_EXTRACTOR_VERSION, 'tl-published-at-v6');
+  assert.equal(PUBLICATION_DATE_EXTRACTOR_VERSION, 'tl-published-at-v7');
 });
 
 // --- FN-1: React streaming SSR segments --------------------------------------

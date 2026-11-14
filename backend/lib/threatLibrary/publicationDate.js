@@ -56,7 +56,7 @@ export const PUBLICATION_DATE_SOURCE_RANK = Object.freeze({
 export const PUBLICATION_DATE_PRECISIONS = Object.freeze(['date', 'datetime']);
 
 /** Bump when detection rules change (recorded next to every detection). */
-export const PUBLICATION_DATE_EXTRACTOR_VERSION = 'tl-published-at-v6';
+export const PUBLICATION_DATE_EXTRACTOR_VERSION = 'tl-published-at-v7';
 
 export function isValidPublicationDateSource(value) {
   return PUBLICATION_DATE_SOURCES.includes(String(value || '').toLowerCase());
@@ -768,6 +768,10 @@ export function extractDocumentPublicationDate(document, opts = {}) {
   if (!document || !Array.isArray(document.blocks) || !document.blocks.length) return emptyDetection('document_empty');
   const sourceType = String(opts.sourceType || (document.meta?.adapter === 'pdf' ? 'pdf' : '')).toLowerCase();
   const source = sourceType === 'pdf' ? 'pdf_visible_date' : 'visible_date';
+  // The cover dateline is a property of the PDF layout, not of how the report
+  // arrived: a PDF fetched from a URL (source_type 'url', 35894) has the same
+  // page-1 header band as an uploaded one (tl-published-at-v7).
+  const pdfLayout = sourceType === 'pdf' || document.meta?.adapter === 'pdf';
   const sourceUrl = opts.sourceUrl || document.meta?.source_url || null;
   let sourceHost = null;
   if (sourceUrl) {
@@ -800,7 +804,7 @@ export function extractDocumentPublicationDate(document, opts = {}) {
     const text = String(b.text || '').replace(/\s+/g, ' ').trim();
     if (!text) continue;
     if (EXCLUDED_ZONES.has(b.zone) || b.layout === 'page_edge') {
-      const dateline = sourceType === 'pdf' && isCoverDateline(b, text, blocks, opts);
+      const dateline = pdfLayout && isCoverDateline(b, text, blocks, opts);
       if (dateline) {
         allFrontDates.add(dateline.parsed.date);
         labelled.push({ block: b, mention: dateline, context: text, signal: 'cover_dateline' });
