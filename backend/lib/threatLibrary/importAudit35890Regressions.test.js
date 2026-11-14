@@ -1,6 +1,6 @@
 /**
  * Import audit 35890–35901 regressions (threat_library_html_v13,
- * threat_library_pdf_v9, tl-candidates-v68, tl-section-tree-v20,
+ * threat_library_pdf_v9, tl-candidates-v69, tl-section-tree-v21,
  * tl-quality-v17, tl-published-at-v6).
  *
  *  FN-1 (35901 BI.ZONE): the article, its "Indicators of compromise" section
@@ -61,8 +61,8 @@ function runHtml(html, url = SOURCE) {
 }
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v68');
-  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v20');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v69');
+  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v21');
   assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v13');
   assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v13');
   assert.equal(PDF_LAYOUT_VERSION, 'threat_library_pdf_v9');

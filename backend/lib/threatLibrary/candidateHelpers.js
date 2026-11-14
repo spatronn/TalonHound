@@ -434,8 +434,11 @@ export function resolveOtpSuffixedTableUrls(byKey, tableAssertions) {
   }
 }
 
-/** A defanged at-sign right before an address's domain ("[@]", "(@)", "{@}", "[at]", "(at)"). */
-export const DEFANGED_AT_BEFORE_RE = /\w(?:\[@\]|\(@\)|\{@\}|\[at\]|\(at\))$/i;
+/**
+ * A defanged at-sign right before an address's domain ("[@]", "(@)", "{@}",
+ * "[at]", "(at)"), including a space the publisher left in ("brad [at] host").
+ */
+export const DEFANGED_AT_BEFORE_RE = /[\w.](?:\s*(?:\[(?:@|at)\]|\((?:@|at)\)|\{@\}))\s*$/i;
 /** The publisher says the sender address is forged ("Spoofed sender impersonating Boots UK"). */
 export const SPOOFED_SENDER_RE = /\b(?:spoof\w*|impersonat\w*|forged|faked?\s+sender|display[\s-]?name\s+spoof\w*)\b/i;
 

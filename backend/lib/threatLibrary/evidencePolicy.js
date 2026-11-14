@@ -232,6 +232,8 @@ export function summarizeOccurrenceEvidence(candidate) {
   const hasBody = zones.some((z) => z === 'report_body' || z === 'unknown' || z === 'code');
   const onlyNegative = zones.length > 0 && zones.every((z) => NEGATIVE_ZONES.has(z));
   const hasEndpoint = occ.some((o) => o.form === 'ip_port' || o.port != null);
+  // A sentence outside the curated table that names these values as indicators.
+  const hasDeclaredIndicator = occ.some((o) => o.relation_marker === 'declared_indicator');
 
   let tier = strongestEvidenceTier({ ...candidate, occurrences: occ.length ? occ : [{ zone: candidate.zone }] });
   if (tier === 'A' && !hasStrong) tier = 'B';
@@ -245,6 +247,7 @@ export function summarizeOccurrenceEvidence(candidate) {
     hasOperational,
     hasBody,
     hasEndpoint,
+    hasDeclaredIndicator,
     onlyNegative,
     tier
   };
@@ -353,7 +356,9 @@ function applyMembershipDecision(candidate, { relation, summary, undecidedSample
     { blocked: stanceBlocked, reason: stanceBlocked ? policy : null },
     { sections: occ.map(occurrenceAuthority), document_has_asserting_section: candidate.document_has_authoritative_scope === true },
     {
-      assessment: ai.assessment || (candidate.decision_source === 'ai' ? candidate.assessment : null),
+      // A replay whose quote no longer grounds (stale) does not keep the label.
+      // A fresh model reading still records what the model said.
+      assessment: ai.stale === true ? null : (ai.assessment || (candidate.decision_source === 'ai' ? candidate.assessment : null)),
       supported: ai.supported ?? null,
       applied: ai.applied ?? null
     }
@@ -519,7 +524,7 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
   const hasAuthoritativeScope = candidate.document_has_authoritative_scope === true;
   // A bare documentation domain is a placeholder wherever it is listed.
   const placeholderApex = candidate.candidate_type === 'domain' && /^(?:www\.)?example\.(?:com|org|net)$/.test(String(candidate.normalized_value || ''));
-  const explicit = summary.hasStrong && !placeholderApex;
+  const explicit = (summary.hasStrong || summary.hasDeclaredIndicator) && !placeholderApex;
   const reportSource = candidate.is_report_source === true;
   const benignComponent = !explicit && (isBenignComponentOnly(candidate) || isDisclaimedUnasserted(candidate));
   candidate.stance_conflict = hasStanceConflict(candidate) || undefined;

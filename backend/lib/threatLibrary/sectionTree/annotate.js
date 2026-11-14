@@ -70,6 +70,10 @@ function documentUsesInferredLevels(doc) {
   return String(doc?.meta?.adapter || doc?.meta?.extractor || '').includes('pdf');
 }
 
+/** Signature rule or author-footer label. Closes an open indicator appendix. */
+const AUTHOR_FOOTER_BOUNDARY_RE =
+  /^(?:-{2,}|—{2,}|–{2,}|_{3,}|\*{3,}|keywords?\s*:?|\d+\s+comments?(?:\s*\(s\))?)\s*$/i;
+
 function looksHeadingLike(b) {
   if (!b) return false;
   if (b.type === 'heading') return true;
@@ -614,6 +618,23 @@ export function annotateSectionTree(doc, opts = {}) {
     const isRealHeading = b.type === 'heading';
     if (!(looksHeadingLike(b) && t)) {
       annotateContentFields(b, stack);
+      continue;
+    }
+
+    // A signature rule or author-footer label closes an open indicator
+    // appendix. The byline after "--" / "Keywords:" / "2 comment(s)" is not
+    // indicator content (tl-section-tree-v21).
+    if (AUTHOR_FOOTER_BOUNDARY_RE.test(t)) {
+      if (nearestAuthoritative(stack)) {
+        popAuthoritativeAppendix(stack);
+        pushTrace({ block_id: b.id, decision: 'close_appendix_on_author_footer' });
+      }
+      b.tree_zone = 'header_footer';
+      b.section_path = [];
+      b.section_path_ids = [];
+      b.authoritative_ancestor_id = null;
+      b.authoritative_zone = null;
+      b.negative_scope = true;
       continue;
     }
 

@@ -1,9 +1,9 @@
 {
   "versions": {
-    "candidates": "tl-candidates-v68",
+    "candidates": "tl-candidates-v69",
     "zones": "tl-zones-v19",
     "tables": "tl-table-v19",
-    "type_resolver": "tl-type-resolver-v28",
+    "type_resolver": "tl-type-resolver-v29",
     "html": "threat_library_html_v13",
     "pdf": "threat_library_pdf_v9",
     "quality": "tl-quality-v17",

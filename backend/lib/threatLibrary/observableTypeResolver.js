@@ -101,8 +101,10 @@ import { isValidIpAddress } from '../publicIp.js';
  * directory-tree glyph (`│ ├── Makefile.pre.in`, `|-- configure.ac`) is a
  * listing entry (file / directory name), not a host under the .in / .ac ccTLD,
  * unless the publisher defanged it or stated a network relation.
+ * v29 (import audit 35890–35901 P1): an angle-bracket placeholder may carry a
+ * colon ("<linkid:8>", "%3Clinkid:8%3E"). It is still a template, not a URL.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v28';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v29';
 
 const TITLE_CASE_TLD_HOST_RE = /^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[A-Z][a-z]{1,23}$/;
 const TITLE_CASE_TLD_HOST_GLOBAL_RE = /(?<![\w.-])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[A-Z][a-z]{1,23}(?![\w-])/g;
@@ -610,12 +612,73 @@ const URL_TEMPLATE_PLACEHOLDER_RE = new RegExp([
   /%(?=\w*[G-Zg-z_])[A-Za-z_]\w{2,40}%/.source,
   // The closing ">" may already be cut by the URL boundary ("/curl/<token>"
   // read as ".../curl/<token") — tl-type-resolver-v17.
-  /<[A-Za-z_][\w.-]{0,40}(?:>|$)/.source,
-  /%3C[A-Za-z_][\w.-]{0,40}(?:%3E|$)/.source,
+  /<[A-Za-z_][\w.:-]{0,48}(?:>|$)/.source,
+  /%3C[A-Za-z_][\w.:-]{0,48}(?:%3E|$)/.source,
   /\/\[[A-Za-z_][\w.-]{2,40}(?:\]|$)/.source,
   // A redacted path segment ("/api/settings/XXXXX") — tl-type-resolver-v21.
   /\/X{3,}(?=[/?#]|$)/.source
 ].join('|'), 'i');
+
+/** Markup that is not an unexpanded publisher placeholder ("<span>", "<br>"). */
+const HTML_TAG_NAMES = new Set([
+  'a', 'b', 'blockquote', 'br', 'code', 'div', 'em', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+  'hr', 'i', 'img', 'li', 'ol', 'p', 'pre', 'span', 'strong', 'sub', 'sup',
+  'table', 'tbody', 'td', 'th', 'thead', 'tr', 'ul'
+]);
+
+function placeholderNameIsHtmlTag(name) {
+  return HTML_TAG_NAMES.has(String(name || '').toLowerCase().split(':')[0]);
+}
+
+/**
+ * True when a URL-shaped value still contains an unexpanded placeholder.
+ * Real HTML tags ("<br>", "<span>") are not placeholders.
+ * @param {string} refanged
+ */
+export function urlContainsTemplatePlaceholder(refanged) {
+  const s = String(refanged || '');
+  if (!URL_TEMPLATE_PLACEHOLDER_RE.test(s)) return false;
+  const stripped = s.replace(/<\/?([A-Za-z][\w:-]*)\b[^>]*>/g, (full, name) => (
+    placeholderNameIsHtmlTag(name) ? '' : full
+  ));
+  return URL_TEMPLATE_PLACEHOLDER_RE.test(stripped);
+}
+
+/**
+ * End index of an unexpanded placeholder glued onto a URL the matcher cut at
+ * "<" ("…/jup_start_<rig>&persist=<method>", "…?id=<linkid:8>"). Returns
+ * `fromIndex` when the following text is not a placeholder (a real tag, or
+ * the next token).
+ * @param {string} text
+ * @param {number} fromIndex index just after the URL match
+ */
+export function templateUrlSpanEnd(text, fromIndex) {
+  const s = String(text || '');
+  let i = Number(fromIndex) || 0;
+  const lead = /^\s*/.exec(s.slice(i));
+  const gap = lead ? lead[0].length : 0;
+  const first = anglePlaceholderLength(s, i + gap);
+  if (first == null) return fromIndex;
+  i += gap + first;
+  while (i < s.length) {
+    const seg = /^&[^=\s<>]{1,40}=/.exec(s.slice(i));
+    if (!seg) break;
+    const ph = anglePlaceholderLength(s, i + seg[0].length);
+    if (ph == null) break;
+    let j = i + seg[0].length + ph;
+    while (j < s.length && !/[\s<>]/.test(s[j]) && !s.slice(j).toLowerCase().startsWith('%3c')) j += 1;
+    i = j;
+  }
+  return i;
+}
+
+/** @returns {number|null} characters consumed, or null when this is not a placeholder */
+function anglePlaceholderLength(s, i) {
+  const m = /^(?:<([A-Za-z_][\w.:-]{0,48})>|%3C([A-Za-z_][\w.:-]{0,48})%3E)/i.exec(s.slice(i));
+  if (!m) return null;
+  if (placeholderNameIsHtmlTag(m[1] || m[2])) return null;
+  return m[0].length;
+}
 
 /**
  * Parenthesis-balanced URL boundary (tl-type-resolver-v14). Publishers wrap
@@ -706,7 +769,7 @@ export function validateUrlCandidate(raw) {
     };
   }
 
-  if ((shape === 'absolute_url' || shape === 'scheme_less_url') && URL_TEMPLATE_PLACEHOLDER_RE.test(refanged)) {
+  if ((shape === 'absolute_url' || shape === 'scheme_less_url') && urlContainsTemplatePlaceholder(refanged)) {
     return { ok: false, resolved_type: 'invalid', reason: 'template_placeholder' };
   }
 

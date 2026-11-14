@@ -330,8 +330,14 @@ export {
  * table that is not an IOC table (no indicator column: "Indicator Type |
  * Description | Source") is a mention in that row's description, never an
  * indicator row of its own.
+ * v69 (import audit 35890–35901 P1): tl-section-tree-v21 and tl-type-resolver-v29.
+ * A sentence that names the values after its colon as indicators is that
+ * declaration, beside a curated table or not. A list row whose only extra
+ * text is a trailing "<--" comment is still that row. A paragraph that is
+ * only an obfuscated author address is contact metadata. A URL that continues
+ * into an unexpanded "<placeholder>" is a template, not a shortened URL.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v68';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v69';
 
 import { normalizeObservable } from '../observable-normalization.js';
 import { refangObservable, refangTextForExtraction } from './defang.js';
@@ -339,7 +345,13 @@ import { annotateDocumentZones } from './documentZones.js';
 import { applySectionTreeAuthority } from './sectionTree/authority.js';
 import { hostnameFromUrl } from './candidateTyping.js';
 import { joinWrappedUrlTail } from './tableSemantics.js';
-import { annotateListStances, discoverDocumentIndicatorScope, isIndicatorValueLine } from './indicatorScope.js';
+import {
+  annotateDeclaredIndicatorLists,
+  annotateListStances,
+  discoverDocumentIndicatorScope,
+  isIndicatorValueLine,
+  stripTrailingInlineComment
+} from './indicatorScope.js';
 import { NON_NETWORK_RESOLVED_TYPES, RESOLVED_TYPES, buildTypeResolutionRecord, validateCanonicalIocValue } from './observableTypeResolver.js';
 import { createExplicitTableAssertionTracker, structuralCompleteness } from './explicitTableCompleteness.js';
 import { inferSlashDateOrder } from './sourceObservation.js';
@@ -435,11 +447,14 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
 
   // Publisher stance about a whole list ("These endpoints are legitimate …").
   annotateListStances(blocks);
+  // "These domains are indicators: a, b" — the values after the colon.
+  annotateDeclaredIndicatorLists(blocks);
   // Format-agnostic "indicator row": PDF list rows, HTML <li>/<td>, or any line that is a single observable.
+  // A trailing "<-- note" is a comment on the row, not a second sentence.
   const isObservableRow = (block) =>
     block.type === 'list_item' ||
     block.layout === 'observable_row' ||
-    ((block.type === 'list' || block.type === 'table') && isIndicatorValueLine(block.text || ''));
+    ((block.type === 'list' || block.type === 'table') && isIndicatorValueLine(stripTrailingInlineComment(block.text || '')));
 
   /**
    * Text the regex passes read for a block. An indicator row that is one URL

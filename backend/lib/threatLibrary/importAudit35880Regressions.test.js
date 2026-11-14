@@ -66,9 +66,9 @@ const members = (x) => x.candidates.filter((c) => isReportIndicatorMember(persis
 const byValue = (x, v) => x.candidates.filter((c) => c.normalized_value === v);
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v68');
-  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v20');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v28');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v69');
+  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v21');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v29');
   assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v13');
   assert.equal(PUBLICATION_DATE_EXTRACTOR_VERSION, 'tl-published-at-v7');
 });

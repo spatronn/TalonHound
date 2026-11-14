@@ -154,7 +154,19 @@ export function aiReplayUpdatesFromRows(rows, opts = {}) {
       : null;
     const decisionSource = promotedFrom ? promotedFrom.decision_source : ev.decision_source;
     const roleSuggestion = ev.ai_role_suggestion || null;
-    if (decisionSource !== 'ai' && !roleSuggestion) continue;
+    const storedAi = !promotedFrom && ev.ai_classification && typeof ev.ai_classification === 'object'
+      ? ev.ai_classification
+      : null;
+    // A later publisher assertion can own the decision (decision_source
+    // deterministic) while the applied model label is still evidence. Replay
+    // it so a wording-only refresh does not drop the label. A refused label
+    // (applied false) is not replayed.
+    const replayStored =
+      decisionSource !== 'ai' &&
+      !roleSuggestion &&
+      storedAi?.applied === true &&
+      Boolean(storedAi.assessment);
+    if (decisionSource !== 'ai' && !roleSuggestion && !replayStored) continue;
     const confidence = row.confidence == null ? null : Number(row.confidence);
     // A model decision the evidence-integrity gate refused when it was made
     // (fabricated quote, missing block, unsupported escalation) stays refused:
@@ -168,6 +180,21 @@ export function aiReplayUpdatesFromRows(rows, opts = {}) {
         assessment: (promotedFrom ? promotedFrom.assessment : row.assessment) || undefined,
         role: (promotedFrom ? promotedFrom.role : row.role) || undefined,
         confidence
+      };
+      if (row.evidence_text) update.evidence_text = row.evidence_text;
+      if (!opts.documentRebuilt) {
+        if (row.section) update.section = row.section;
+        if (row.block_id) update.evidence_block_ids = [row.block_id];
+      }
+      updates.push(update);
+    } else if (replayStored) {
+      const update = {
+        candidate_type: row.candidate_type,
+        normalized_value: row.normalized_value,
+        assessment: storedAi.assessment,
+        role: storedAi.role || undefined,
+        confidence: storedAi.confidence == null ? confidence : Number(storedAi.confidence),
+        replay: true
       };
       if (row.evidence_text) update.evidence_text = row.evidence_text;
       if (!opts.documentRebuilt) {

@@ -1,13 +1,15 @@
 -- Read-only validation of the 12 reports of import audit 35890-35901.
 --
 -- Stored Indicators = is_member rows of each report's latest non-legacy extraction run.
--- Expected = the audit's source-derived inventory below (192 IOCs, read from the original
--- documents / PDF, not from candidate or membership rows). The 5 malformed entries are
--- publisher IOCs persisted in a malformed form (placeholder URLs); they are listed as stored.
+-- Expected = the audit's source-derived inventory below, read from the original
+-- documents / PDF, not from candidate or membership rows.
+-- P1 (tl-candidates-v69): the 5 placeholder URLs (jup_start_<rig>, <linkid:8>) are
+-- templates, not Indicators. They are not in this inventory. Concrete IOCs: 187.
 --   matched     = expected AND stored        valid = matched minus malformed
 --   missing     = expected, not stored       false positive = stored, not expected
 -- Pre-deploy (prod c694d6d, 2026-11-14): stored 134, matched 133, valid 128, malformed 5, FP 1, missing 59.
--- After a targeted Refresh of 35894 and 35901: stored 190, matched 189, valid 184, malformed 5, FP 1, missing 3.
+-- After P0 refresh of 35894 and 35901 (f47edde): stored 190, matched 189, valid 184, malformed 5, FP 1, missing 3.
+-- After a future P1 refresh: expected 187, stored 187, matched 187, valid 187, malformed 0, missing 0, FP 0.
 
 \echo === per report: latest run, contract, extractor, title, published date
 with latest as (
@@ -37,7 +39,6 @@ insert into expected_ioc values
   (35892, 'ip:157.20.241.16', false),
   (35892, 'ip:79.76.51.56', false),
   (35892, 'url:http://157.20.241.16:8080/jup.sh', false),
-  (35892, 'url:http://157.20.241.16:8080/ob/cronhit?h=jup_start_', true),
   (35892, 'url:http://157.20.241.16:8080/ob/fcheck', false),
   (35892, 'url:http://157.20.241.16:8080/xmrig.tgz', false),
   (35892, 'url:http://157.20.241.16:8080/xvgz', false),
@@ -166,10 +167,6 @@ insert into expected_ioc values
   (35900, 'url:https://github.com/yegeqebige46-creator/qq', false),
   (35900, 'url:https://github.com/yegeqebige46-creator/qq/raw/main/update.zip', false),
   (35900, 'url:https://linkrot.fypahedupal2-0maz.workers.dev/link?token=7157717581ca4e3dda83e418af25fa448fe98ed2', false),
-  (35900, 'url:https://securedoc.mesuttgulerr573.workers.dev/?id=%3Clinkid:8%3E', true),
-  (35900, 'url:https://securedoc.mesuttgulerr573.workers.dev/h?id=%3Clinkid:8%3E', true),
-  (35900, 'url:https://securedoc.mesuttgulerr573.workers.dev/m?id=%3Clinkid:8%3E', true),
-  (35900, 'url:https://securedoc.mesuttgulerr573.workers.dev/s?id=%3Clinkid:8%3E', true),
   (35901, 'domain:stinkyshockblazer.cfd', false),
   (35901, 'domain:unmoralreformeddehydrate.cfd', false),
   (35901, 'ip:108.186.112.105', false),
@@ -243,13 +240,17 @@ select (select count(*) from expected_ioc) expected,
        (select count(*) from stored_ioc s2 where not exists (select 1 from expected_ioc e2 where e2.report_id = s2.report_id and e2.identity = s2.identity)) false_positive
 from expected_ioc e left join stored_ioc s on s.report_id = e.report_id and s.identity = e.identity;
 
-\echo === missing expected IOCs (after refresh expect exactly 3: 35895 x2 zap.cloud, 35899 171.22.131.24 URL)
+\echo === missing expected IOCs (after a P1 refresh expect 0 rows)
 select e.report_id, e.identity from expected_ioc e
 where not exists (select 1 from stored_ioc s where s.report_id = e.report_id and s.identity = e.identity) order by 1, 2;
 
-\echo === stored but not expected (expect exactly 1: 35899 malware-traffic-analysis.net)
+\echo === stored but not expected (after a P1 refresh expect 0 rows; f47edde still has malware-traffic-analysis.net)
 select s.report_id, s.identity from stored_ioc s
 where not exists (select 1 from expected_ioc e where e.report_id = s.report_id and e.identity = s.identity) order by 1, 2;
+
+\echo === template URLs must not be Indicators (expect 0 rows after a P1 refresh)
+select report_id, identity from stored_ioc
+where identity like '%jup_start_%' or identity like '%linkid%' or identity ilike '%3Crig%' or identity ilike '%3Cmethod%';
 
 \echo === benign values that must not be Indicators (expect 0 rows)
 select report_id, identity from stored_ioc
