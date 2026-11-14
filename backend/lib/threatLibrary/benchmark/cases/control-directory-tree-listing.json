@@ -1,0 +1,35 @@
+{
+  "id": "control-directory-tree-listing",
+  "title": "Control: directory-tree listing entries are file names, not .in / .ac hosts; a defanged .in host stays a domain",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": ["control", "type_resolver", "dual_use_suffix", "tree_listing", "percent_escape", "mode_a"],
+  "source": {
+    "kind": "html_file",
+    "path": "control-directory-tree-listing.html",
+    "url": "https://research.example/blog/open-directory-tree-listing/"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed from import audit 35880-35889 (35887: 'Makefile.pre.in', 'configure.ac', 'pyconfig.h.in', 'MANIFEST.in' in a tree listing were typed as domains; 35883: '%7Cxmr-ru.kryptex.network' became '7cxmr-ru...')",
+      "verified_by": "construction",
+      "verified_at": "2026-11-14"
+    },
+    "indicators": [
+      { "type": "ip", "value": "198.51.100.21", "assertion": "explicit" },
+      { "type": "domain", "value": "staging-host.in", "assertion": "explicit" }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      { "type": "domain", "value": "makefile.pre.in" },
+      { "type": "domain", "value": "configure.ac" },
+      { "type": "domain", "value": "pyconfig.h.in" },
+      { "type": "domain", "value": "manifest.in" },
+      { "type": "domain", "value": "7cxmr-eu.pool-host.example" }
+    ],
+    "sections": [
+      { "heading": "Indicators of Compromise (IOCs)", "expected": "authoritative" }
+    ]
+  }
+}

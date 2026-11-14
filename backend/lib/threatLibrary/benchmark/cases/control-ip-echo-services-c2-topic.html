@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head><title>IP-echo services queried by a miner under a C2-titled analysis heading</title></head>
+<body>
+<article>
+<h1>IP-echo services queried by a miner under a C2-titled analysis heading</h1>
+<p>Background paragraph describing the cryptomining toolkit, its orchestrator and the hosts it was deployed on.</p>
+<h2>Analysis</h2>
+<h3>Loader analysis: anti-debugging and the encoded onion C2 domain</h3>
+<p>The controller hostname is stored encoded; decoding it gives the following domain with a hardcoded port:</p>
+<p>abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuv.onion:9051</p>
+<h4>Host and GPU enumeration</h4>
+<p>The loader collects GPU information with the following command:</p>
+<pre><code>nvidia-smi --query-gpu=name --format=csv,noheader</code></pre>
+<table><thead><tr><th>Collection</th><th>Source</th><th>Value sent</th></tr></thead><tbody>
+<tr><td>Hostname</td><td>/etc/hostname</td><td>Trimmed hostname</td></tr>
+<tr><td>Public IP</td><td>IP-discovery HTTP response</td><td>Validated address</td></tr></tbody></table>
+<p>To establish the host&#8217;s public IP, the loader queries three external services in order, with a five-second deadline per attempt, stopping at the first valid response:</p>
+<p>api.echo-one.example</p>
+<p>echo-two.example/ip</p>
+<p>echo-three.example</p>
+<h4>Registration, HMAC authentication and heartbeats</h4>
+<p>The client registers with a timestamp and an HMAC digest.</p>
+<h2>Observables and indicators</h2>
+<table><thead><tr><th>Observable</th><th>Type</th><th>Name</th></tr></thead><tbody>
+<tr><td>cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc01</td><td>SHA-256</td><td>loader</td></tr></tbody></table>
+</article>
+</body>
+</html>
