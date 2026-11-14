@@ -441,6 +441,37 @@ export function headerIntent(label) {
 }
 
 /**
+ * True when every cell of a headed table block that holds `value` sits under a
+ * Description-intent column header and no header declares an Indicator column
+ * (tl-candidates-v68). The IOC-table
+ * interpreter does not take such a table as an IOC table when it has no
+ * indicator column (an FBI "Indicator Type | Description | Source" behavioral
+ * table): a value written inside the description is a mention, not a row.
+ * @param {{ type?: string, table?: { headers?: unknown[]|null, rows?: unknown[][] } }|null|undefined} block
+ * @param {string} value
+ */
+export function isDescriptionColumnMention(block, value) {
+  const headers = block?.type === 'table' ? block.table?.headers : null;
+  const rows = block?.table?.rows;
+  if (!Array.isArray(headers) || !Array.isArray(rows)) return false;
+  // A table that declares an Indicator column is an IOC table: a value in its
+  // description is still the publisher's to weigh, not settled here.
+  if (headers.some((h) => headerIntent(String(h ?? '')) === 'indicator')) return false;
+  const needle = refangObservable(String(value || '')).toLowerCase();
+  if (!needle) return false;
+  let seen = false;
+  for (const row of rows) {
+    if (!Array.isArray(row)) continue;
+    for (let i = 0; i < row.length; i += 1) {
+      if (!refangObservable(String(row[i] ?? '')).toLowerCase().includes(needle)) continue;
+      if (headerIntent(String(headers[i] ?? '')) !== 'description') return false;
+      seen = true;
+    }
+  }
+  return seen;
+}
+
+/**
  * Parse a declared observable-type label ("SHA256", "IP Address & Port",
  * "IP 地址", "Alan Adı"). Returns null when the label is not a type label.
  * @param {string} label

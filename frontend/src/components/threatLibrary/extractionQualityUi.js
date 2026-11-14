@@ -173,6 +173,10 @@ export const QUALITY_CODE_COPY = Object.freeze({
     title: 'Values in discarded page regions',
     why: 'Part of the page was left out of the report text, and it holds IOC-shaped values. Check the source page for publisher indicators.'
   },
+  ioc_section_region_dropped: {
+    title: 'IOC section left out of the report text',
+    why: 'A part of the page that holds an Indicators of Compromise section was not read into the report, so its Indicators are missing. Compare with the source page; this blocks finalize until resolved or excepted.'
+  },
   hosts_file_entries_context: {
     title: 'Hosts-file entries kept as Context Only',
     why: 'Hosts from "0.0.0.0 <host>" lines in an IOC table are names the sample blocks in the hosts file, not infrastructure it connects to. They stay Context Only.'

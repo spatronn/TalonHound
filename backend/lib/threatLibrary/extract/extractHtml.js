@@ -47,7 +47,8 @@ import { selectHtmlTitle } from './titleSelection.js';
 // unaccounted source region (htmlBlocks v11); blocks are unchanged.
 // v12: React streaming SSR segments (`$RS` / `$RC`) are put back at their
 // placeholders before blocks are read (htmlBlocks v12).
-export const THREAT_LIBRARY_HTML_EXTRACTOR_VERSION = 'threat_library_html_v12';
+// v13: a <template> holding the article (Vue slot content) is read as content (htmlBlocks v13).
+export const THREAT_LIBRARY_HTML_EXTRACTOR_VERSION = 'threat_library_html_v13';
 // Structured fallback v5: the fallback reads blocks with htmlBlocks too, but its
 // id stayed at v4 through htmlBlocks v7–v12, so fallback documents never went
 // stale and Refresh never re-read them (35888: React streaming SSR rows). From

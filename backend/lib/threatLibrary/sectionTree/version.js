@@ -73,8 +73,11 @@
  * a lead-in-only IOC heading (an external-list pointer included) continues
  * into same-level inventory-dominant siblings, past labels nested in the
  * previous sibling.
+ * v20 (import audit 35890–35901): under authoritative ancestry a value in the
+ * Description column of a headed non-IOC table is never forced into a
+ * structural row (the table placement alone used to make it one).
  */
-export const SECTION_TREE_VERSION = 'tl-section-tree-v19';
+export const SECTION_TREE_VERSION = 'tl-section-tree-v20';
 
 /**
  * Authoritative scope-engine stamp when section-tree owns membership zones.

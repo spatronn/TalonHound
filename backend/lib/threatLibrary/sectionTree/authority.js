@@ -21,6 +21,7 @@ import {
   isInventoryRowLine
 } from '../indicatorScope.js';
 import { refangTextForExtraction } from '../defang.js';
+import { isDescriptionColumnMention } from '../tableSemantics.js';
 import { annotateSectionTree } from './annotate.js';
 import {
   SECTION_TREE_SCOPE_ENGINE_VERSION,
@@ -103,6 +104,10 @@ function isObservableLedAnnotation(text, value) {
 }
 
 function shouldForceStructuralRow(candidateType, text, value, occ, block) {
+  // A value inside a Description column of a headed table that is not an IOC
+  // table is part of that row's description, not a row of its own
+  // (tl-section-tree-v20).
+  if (occ?.form !== 'table_row' && isDescriptionColumnMention(block, value)) return false;
   if (isInventoryPlacement(occ, block)) return true;
   if (String(block?.type || '') === 'code' && isStructuredCodeRow(lineContainingObservable(text, value) || text, value)) return true;
   const type = String(candidateType || '').toLowerCase();

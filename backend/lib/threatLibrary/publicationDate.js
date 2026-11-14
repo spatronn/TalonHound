@@ -56,7 +56,7 @@ export const PUBLICATION_DATE_SOURCE_RANK = Object.freeze({
 export const PUBLICATION_DATE_PRECISIONS = Object.freeze(['date', 'datetime']);
 
 /** Bump when detection rules change (recorded next to every detection). */
-export const PUBLICATION_DATE_EXTRACTOR_VERSION = 'tl-published-at-v5';
+export const PUBLICATION_DATE_EXTRACTOR_VERSION = 'tl-published-at-v6';
 
 export function isValidPublicationDateSource(value) {
   return PUBLICATION_DATE_SOURCES.includes(String(value || '').toLowerCase());
@@ -719,6 +719,32 @@ function normalizeTitle(s) {
   return String(s || '').toLowerCase().replace(/[^a-z0-9一-鿿]+/g, '').slice(0, 60);
 }
 
+/** Longest page-1 masthead line read as a dateline ("13 NOVEMBER 2026"). */
+const MAX_DATELINE_CHARS = 40;
+
+/**
+ * A PDF cover dateline (tl-published-at-v6): a page-1 line in the printed
+ * header band whose whole text is one calendar date, and that no other page
+ * repeats (a running header date is chrome, not the publication date). FBI /
+ * CISA FLASH and advisory PDFs print the release date only there, above the
+ * title. Returns the date mention or null.
+ * @param {object} block
+ * @param {string} text
+ * @param {object[]} blocks
+ * @param {object} opts
+ */
+function isCoverDateline(block, text, blocks, opts) {
+  if (block.page !== 1 || block.layout !== 'page_edge' || text.length > MAX_DATELINE_CHARS) return null;
+  const mentions = findDateMentions(text, opts);
+  if (mentions.length !== 1) return null;
+  const m = mentions[0];
+  const rest = (text.slice(0, m.index) + text.slice(m.index + m.raw.length)).replace(/[\s,.;:|–—-]+/g, '');
+  if (rest) return null;
+  const key = text.toLowerCase().replace(/\s+/g, ' ');
+  const repeated = blocks.some((o) => o !== block && o.page !== 1 && String(o.text || '').toLowerCase().replace(/\s+/g, ' ').trim() === key);
+  return repeated ? null : m;
+}
+
 /**
  * Explicit visible publication date in a canonical document's cover / front
  * matter. Conservative on purpose:
@@ -774,6 +800,13 @@ export function extractDocumentPublicationDate(document, opts = {}) {
     const text = String(b.text || '').replace(/\s+/g, ' ').trim();
     if (!text) continue;
     if (EXCLUDED_ZONES.has(b.zone) || b.layout === 'page_edge') {
+      const dateline = sourceType === 'pdf' && isCoverDateline(b, text, blocks, opts);
+      if (dateline) {
+        allFrontDates.add(dateline.parsed.date);
+        labelled.push({ block: b, mention: dateline, context: text, signal: 'cover_dateline' });
+        considered.push({ block_id: b.id, raw: dateline.raw, signal: 'cover_dateline', page: b.page ?? null });
+        continue;
+      }
       if (findDateMentions(text, opts).length) considered.push({ block_id: b.id, skipped: b.zone || b.layout, text: text.slice(0, 80) });
       continue;
     }

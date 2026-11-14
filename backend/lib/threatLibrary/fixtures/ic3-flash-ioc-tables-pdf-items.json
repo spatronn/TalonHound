@@ -1,0 +1,5175 @@
+{
+"source": "FBI FLASH-20261113-001 (TLP:CLEAR, public), https://www.ic3.gov/CSA/2026/261113.pdf; pdf.js text items of pages 1, 6 and 7 (cover, IP Addresses / Domains / Network and Behavioral Indicators tables)",
+"pages": [
+{
+"page": 1,
+"pageHeight": 792,
+"items": [
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+655.66
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+39.02
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "TLP:CLEAR",
+"transform": [
+12.96,
+0,
+0,
+12.96,
+273.05,
+776.64
+],
+"width": 64.46,
+"height": 12.96,
+"fontName": "g_d0_f2"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+337.63,
+776.64
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+305.33,
+753.48
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "TLP",
+"transform": [
+12.96,
+0,
+0,
+12.96,
+275.93,
+11.16
+],
+"width": 21.06,
+"height": 12.96,
+"fontName": "g_d0_f2"
+},
+{
+"str": ":",
+"transform": [
+12.96,
+0,
+0,
+12.96,
+296.93,
+11.16
+],
+"width": 3.89,
+"height": 12.96,
+"fontName": "g_d0_f2"
+},
+{
+"str": "CLEAR",
+"transform": [
+12.96,
+0,
+0,
+12.96,
+300.89,
+11.16
+],
+"width": 39.53,
+"height": 12.96,
+"fontName": "g_d0_f2"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+340.51,
+11.16
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "13 NOVEMBER 2026",
+"transform": [
+12,
+0,
+0,
+12,
+463.3,
+751.32
+],
+"width": 104.87,
+"height": 12,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+14.04,
+0,
+0,
+14.04,
+568.3,
+751.32
+],
+"width": 2.85,
+"height": 14.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "FLASH Number",
+"transform": [
+9.96,
+0,
+0,
+9.96,
+482.62,
+734.52
+],
+"width": 66.15,
+"height": 9.96,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+9.96,
+0,
+0,
+9.96,
+548.86,
+734.52
+],
+"width": 2.02,
+"height": 9.96,
+"fontName": "g_d0_f1"
+},
+{
+"str": "FLASH",
+"transform": [
+9.96,
+0,
+0,
+9.96,
+468.58,
+722.28
+],
+"width": 28.73,
+"height": 9.96,
+"fontName": "g_d0_f1"
+},
+{
+"str": "-",
+"transform": [
+9.96,
+0,
+0,
+9.96,
+497.38,
+722.28
+],
+"width": 3.39,
+"height": 9.96,
+"fontName": "g_d0_f1"
+},
+{
+"str": "2026",
+"transform": [
+9.96,
+0,
+0,
+9.96,
+500.74,
+722.28
+],
+"width": 21.37,
+"height": 9.96,
+"fontName": "g_d0_f1"
+},
+{
+"str": "1113",
+"transform": [
+9.96,
+0,
+0,
+9.96,
+522.1,
+722.28
+],
+"width": 21.37,
+"height": 9.96,
+"fontName": "g_d0_f1"
+},
+{
+"str": "-",
+"transform": [
+9.96,
+0,
+0,
+9.96,
+543.46,
+722.28
+],
+"width": 3.39,
+"height": 9.96,
+"fontName": "g_d0_f1"
+},
+{
+"str": "001",
+"transform": [
+9.96,
+0,
+0,
+9.96,
+546.94,
+722.28
+],
+"width": 15.99,
+"height": 9.96,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+9.96,
+0,
+0,
+9.96,
+563.02,
+722.28
+],
+"width": 2.02,
+"height": 9.96,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+9.96,
+0,
+0,
+9.96,
+515.74,
+706.18
+],
+"width": 2.02,
+"height": 9.96,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+14.04,
+0,
+0,
+14.04,
+515.74,
+681.22
+],
+"width": 2.85,
+"height": 14.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Threat Overview of ARTEX Autonomous Penetration ",
+"transform": [
+20.04,
+0,
+0,
+20.04,
+54,
+633.82
+],
+"width": 468.03,
+"height": 20.04,
+"fontName": "g_d0_f2"
+},
+{
+"str": "Testing Framework ",
+"transform": [
+20.04,
+0,
+0,
+20.04,
+54,
+609.46
+],
+"width": 176.93,
+"height": 20.04,
+"fontName": "g_d0_f2"
+},
+{
+"str": " ",
+"transform": [
+20.04,
+0,
+0,
+20.04,
+230.93,
+609.46
+],
+"width": 4.07,
+"height": 20.04,
+"fontName": "g_d0_f2"
+},
+{
+"str": " ",
+"transform": [
+20.04,
+0,
+0,
+20.04,
+168.02,
+582.34
+],
+"width": 4.53,
+"height": 20.04,
+"fontName": "g_d0_f3"
+},
+{
+"str": "Summary",
+"transform": [
+15.96,
+0,
+0,
+15.96,
+54,
+559.06
+],
+"width": 63.23,
+"height": 15.96,
+"fontName": "g_d0_f3"
+},
+{
+"str": " ",
+"transform": [
+15.96,
+0,
+0,
+15.96,
+117.38,
+559.06
+],
+"width": 3.61,
+"height": 15.96,
+"fontName": "g_d0_f3"
+},
+{
+"str": "The Federal Bureau of Investigation (FBI) is releasing this FLASH to highlight the tactics, techniques, and ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+536.47
+],
+"width": 490.83,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "procedures (TTPs) and indicators of compromise (IOCs) associated with the ARTEX autonomous ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+521.95
+],
+"width": 454.9,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "penetration testing framework. ARTEX is an open",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+507.43
+],
+"width": 229.58,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "-",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+283.85,
+507.43
+],
+"width": 3.75,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "source, l",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+287.57,
+507.43
+],
+"width": 41.13,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "arge language model (LLM)",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+328.63,
+507.43
+],
+"width": 126.98,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "-",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+455.71,
+507.43
+],
+"width": 3.75,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "driven agentic ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+459.31,
+507.43
+],
+"width": 68.78,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "platform that threat actors have weaponized to automate multiple phases of cyber intrusions at machine ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+492.91
+],
+"width": 495.83,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "speed, from reconnaissance through data exfiltration. Since at least August 2026, a variety of malicious ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+478.51
+],
+"width": 488.95,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "cyber a",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+463.99
+],
+"width": 34.53,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "ctors have used ARTEX to conduct campaigns targeting organizations globally across multiple ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+88.58,
+463.99
+],
+"width": 443.27,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "sectors, including financial services, government, technology, defense, semiconductor, energy, ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+449.47
+],
+"width": 453.14,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "healthcare, manufacturing, telecommunications, and legal industries.",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+434.95
+],
+"width": 331.59,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "1,2,3,4,5",
+"transform": [
+6.48,
+0,
+0,
+6.48,
+385.87,
+438.91
+],
+"width": 24.56,
+"height": 6.48,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+410.59,
+434.95
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "ARTEX significantly reduces the time required to chain attack techniques, with some intrusions ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+412.51
+],
+"width": 448.67,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "progressing from initial targeting to privileged access in under three hours.²",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+397.99
+],
+"width": 353.2,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+407.59,
+397.99
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "The",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+409.87,
+397.99
+],
+"width": 17.08,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+426.91,
+397.99
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "framework enables threat ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+429.19,
+397.99
+],
+"width": 124.06,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "actors with minimal technical expertise to conduct complex, multi",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+383.47
+],
+"width": 312.73,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "-",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+367.03,
+383.47
+],
+"width": 3.75,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "target operations simultaneously, ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+370.75,
+383.47
+],
+"width": 161.75,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "fundamentally accelerating attack velocity and expanding operational scale. Notable campaigns include ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+369.07
+],
+"width": 494.94,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "financially motivated attack",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+354.53
+],
+"width": 131.18,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "s against South Korean financial institutions resulting in exfiltration of personal ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+185.3,
+354.53
+],
+"width": 372.73,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "information from approximately 67,000 individuals,",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+340.01
+],
+"width": 241.43,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "6,7,8",
+"transform": [
+6.48,
+0,
+0,
+6.48,
+295.61,
+343.97
+],
+"width": 14.01,
+"height": 6.48,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+309.65,
+340.01
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "a",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+311.93,
+340.01
+],
+"width": 5.86,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "nd a ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+317.81,
+340.01
+],
+"width": 22.61,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "supply chain compromise affecting ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+340.51,
+340.01
+],
+"width": 168.76,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "ConnectWise Cloud Backup customers ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+325.49
+],
+"width": 189.32,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "that ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+243.41,
+325.49
+],
+"width": 21.29,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "enabl",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+264.65,
+325.49
+],
+"width": 26.85,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "ed",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+291.41,
+325.49
+],
+"width": 11.89,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+303.41,
+325.49
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "access to more than 2,250 downstream tenants",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+305.69,
+325.49
+],
+"width": 225.89,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": ".",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+531.82,
+325.49
+],
+"width": 3.16,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "2",
+"transform": [
+6.48,
+0,
+0,
+6.48,
+534.94,
+329.45
+],
+"width": 3.46,
+"height": 6.48,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+538.3,
+325.49
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+540.46,
+325.49
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Following public disclosure of malicious usage, the original ARTEX developer removed the GitHub ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+303.05
+],
+"width": 461.31,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "repository in October 2026.",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+288.53
+],
+"width": 129.09,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "3",
+"transform": [
+6.48,
+0,
+0,
+6.48,
+183.14,
+292.49
+],
+"width": 3.46,
+"height": 6.48,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+186.62,
+288.53
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "However, the framework continues to proliferate through community ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+188.9,
+288.53
+],
+"width": 326.56,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "forks",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+515.86,
+288.53
+],
+"width": 23.7,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": ", ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+539.5,
+288.53
+],
+"width": 5.32,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "localized variations, archived copies, and a commercial version (ARTEX PRO), ensuring continued ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+274.01
+],
+"width": 461.22,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "availability to threat actors.",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+259.61
+],
+"width": 129.04,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "3,10",
+"transform": [
+6.48,
+0,
+0,
+6.48,
+183.14,
+263.57
+],
+"width": 12.21,
+"height": 6.48,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+195.41,
+259.61
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "As of early November 2026, researchers identified over 1,600 publicly ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+197.69,
+259.61
+],
+"width": 329.16,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "exposed ARTEX console instances, with total deployments likely significantly higher when including ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+245.09
+],
+"width": 469.54,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "systems behind firewalls or in private networks.",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+230.57
+],
+"width": 224.34,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "4",
+"transform": [
+6.48,
+0,
+0,
+6.48,
+278.57,
+234.53
+],
+"width": 3.46,
+"height": 6.48,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+281.93,
+230.57
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "The FBI encourages organizations",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+208.13
+],
+"width": 158.89,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "—",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+212.93,
+208.13
+],
+"width": 10.16,
+"height": 11.04,
+"fontName": "g_d0_f4"
+},
+{
+"str": "particularly those operating internet",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+223.13,
+208.13
+],
+"width": 169.73,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "-",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+393.07,
+208.13
+],
+"width": 3.75,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "exposed applications, self",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+396.67,
+208.13
+],
+"width": 124.08,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "-",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+520.9,
+208.13
+],
+"width": 3.75,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "service portals, cloud infrastructure, and partner/supplier systems",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+193.61
+],
+"width": 314.42,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "—",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+368.71,
+193.61
+],
+"width": 10.16,
+"height": 11.04,
+"fontName": "g_d0_f4"
+},
+{
+"str": "to implement the recommendations ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+378.91,
+193.61
+],
+"width": 173.0,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "in the Mitigations section to reduce the likelihood and i",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+179.06
+],
+"width": 257.19,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "mpact of ARTEX",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+311.45,
+179.06
+],
+"width": 75.22,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "-",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+386.71,
+179.06
+],
+"width": 3.75,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "enabled intrusions.",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+390.43,
+179.06
+],
+"width": 91.54,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+482.02,
+179.06
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+156.62
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+134.06
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+111.62
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+89.06
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+}
+]
+},
+{
+"page": 6,
+"pageHeight": 792,
+"items": [
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+655.66
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+39.02
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "TLP:CLEAR",
+"transform": [
+12.96,
+0,
+0,
+12.96,
+273.05,
+776.64
+],
+"width": 64.46,
+"height": 12.96,
+"fontName": "g_d0_f2"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+337.63,
+776.64
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+305.33,
+753.48
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "TLP",
+"transform": [
+12.96,
+0,
+0,
+12.96,
+275.93,
+11.16
+],
+"width": 21.06,
+"height": 12.96,
+"fontName": "g_d0_f2"
+},
+{
+"str": ":",
+"transform": [
+12.96,
+0,
+0,
+12.96,
+296.93,
+11.16
+],
+"width": 3.89,
+"height": 12.96,
+"fontName": "g_d0_f2"
+},
+{
+"str": "CLEAR",
+"transform": [
+12.96,
+0,
+0,
+12.96,
+300.89,
+11.16
+],
+"width": 39.53,
+"height": 12.96,
+"fontName": "g_d0_f2"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+340.51,
+11.16
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "compromised mail server",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+641.26
+],
+"width": 120.99,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+336.91,
+641.26
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "• Created new 100GB volumes ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+627.82
+],
+"width": 147.24,
+"height": 11.04,
+"fontName": "g_d0_f4"
+},
+{
+"str": "for exfiltration preparation",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+614.38
+],
+"width": 123.81,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+339.91,
+614.38
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "T1074.002",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+371.95,
+641.26
+],
+"width": 49.6,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+421.51,
+641.26
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "–",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+423.79,
+641.26
+],
+"width": 5.08,
+"height": 11.04,
+"fontName": "g_d0_f4"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+428.83,
+641.26
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Data Staged: ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+431.11,
+641.26
+],
+"width": 63.27,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Remote Data Staging",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+371.95,
+627.82
+],
+"width": 99.47,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+471.46,
+627.82
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "T1059",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+371.95,
+614.38
+],
+"width": 28.83,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+400.75,
+614.38
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "–",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+403.03,
+614.38
+],
+"width": 5.08,
+"height": 11.04,
+"fontName": "g_d0_f4"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+408.07,
+614.38
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Command and ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+410.35,
+614.38
+],
+"width": 73.0,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Scripting Interpreter",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+371.95,
+600.94
+],
+"width": 94.89,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+466.9,
+600.94
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+371.95,
+587.5
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Command and Control",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+573.1
+],
+"width": 106.24,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+166.1,
+573.1
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "• Used residential proxy ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+573.1
+],
+"width": 115.07,
+"height": 11.04,
+"fontName": "g_d0_f4"
+},
+{
+"str": "services",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+559.66
+],
+"width": 39.41,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+255.29,
+559.66
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "• Routed traffic through Tor, ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+546.22
+],
+"width": 133.89,
+"height": 11.04,
+"fontName": "g_d0_f4"
+},
+{
+"str": "SOCKS proxies, compromised ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+532.75
+],
+"width": 145.19,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "relays",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+519.31
+],
+"width": 28.64,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+244.49,
+519.31
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "• Tunneled traffic via Chisel ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+505.99
+],
+"width": 132.31,
+"height": 11.04,
+"fontName": "g_d0_f4"
+},
+{
+"str": "and SoftEther",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+492.55
+],
+"width": 64.72,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+280.61,
+492.55
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "• BLOODALCHEMY ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+479.11
+],
+"width": 93.64,
+"height": 11.04,
+"fontName": "g_d0_f4"
+},
+{
+"str": "communicated with C2 ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+465.67
+],
+"width": 112.95,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "domains",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+452.23
+],
+"width": 41.57,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+257.45,
+452.23
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "T1090",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+371.95,
+573.1
+],
+"width": 28.83,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+400.75,
+573.1
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "–",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+403.03,
+573.1
+],
+"width": 5.08,
+"height": 11.04,
+"fontName": "g_d0_f4"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+408.07,
+573.1
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Proxy",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+410.35,
+573.1
+],
+"width": 25.87,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+436.15,
+573.1
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "T1090.003",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+371.95,
+559.66
+],
+"width": 49.6,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+421.51,
+559.66
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "–",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+423.79,
+559.66
+],
+"width": 5.08,
+"height": 11.04,
+"fontName": "g_d0_f4"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+428.83,
+559.66
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Proxy: Multi",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+431.11,
+559.66
+],
+"width": 55.16,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "-",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+486.34,
+559.66
+],
+"width": 3.75,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "hop ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+489.94,
+559.66
+],
+"width": 20.59,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Proxy",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+371.95,
+546.22
+],
+"width": 25.98,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+397.87,
+546.22
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "T1572",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+371.95,
+532.75
+],
+"width": 28.83,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+400.75,
+532.75
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "–",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+403.03,
+532.75
+],
+"width": 5.08,
+"height": 11.04,
+"fontName": "g_d0_f4"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+408.07,
+532.75
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Protocol Tunneling",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+410.35,
+532.75
+],
+"width": 88.67,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+499.06,
+532.75
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "T1071.001",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+371.95,
+519.31
+],
+"width": 49.6,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+421.51,
+519.31
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "–",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+423.79,
+519.31
+],
+"width": 5.08,
+"height": 11.04,
+"fontName": "g_d0_f4"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+428.83,
+519.31
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Application Layer ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+431.11,
+519.31
+],
+"width": 84.47,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Protocol: Web Protocols",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+371.95,
+505.99
+],
+"width": 115.59,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+487.54,
+505.99
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+437.83
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+168.02,
+412.15
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f2"
+},
+{
+"str": "Indicators",
+"transform": [
+15.96,
+0,
+0,
+15.96,
+54,
+388.15
+],
+"width": 74.13,
+"height": 15.96,
+"fontName": "g_d0_f2"
+},
+{
+"str": " ",
+"transform": [
+15.96,
+0,
+0,
+15.96,
+128.3,
+388.15
+],
+"width": 3.24,
+"height": 15.96,
+"fontName": "g_d0_f2"
+},
+{
+"str": "The FBI recommends organizations investigate or vet IOCs prior to taking action",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+363.77
+],
+"width": 374.19,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": ", such as blocking.",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+428.59,
+363.77
+],
+"width": 87.69,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+516.34,
+363.77
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "The FBI ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+518.62,
+363.77
+],
+"width": 36.88,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "recognizes that infrastructure used for malicious activity may be hosted on cloud or virtualized platforms ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+350.33
+],
+"width": 495.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "where IP addresses can be dynamically or temporarily assigned. As a result, an address associated with ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+336.89
+],
+"width": 491.44,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "malicious activity at one point in tim",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+323.45
+],
+"width": 169.97,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "e may later be reassigned to benign services. Accordingly, these ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+224.21,
+323.45
+],
+"width": 303.43,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "indicators should be interpreted as historically observed infrastructure within the activity window and ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+310.01
+],
+"width": 479.74,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "should be corroborated with current network telemetry or additional intelligence source",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+296.57
+],
+"width": 413.51,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "s when used for ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+467.98,
+296.57
+],
+"width": 76.56,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "defensive or investigative purposes.",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+283.13
+],
+"width": 169.3,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+223.37,
+283.13
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+15.96,
+0,
+0,
+15.96,
+54,
+265.01
+],
+"width": 3.24,
+"height": 15.96,
+"fontName": "g_d0_f5"
+},
+{
+"str": "IP Addresses",
+"transform": [
+14.04,
+0,
+0,
+14.04,
+54,
+239.21
+],
+"width": 78.39,
+"height": 14.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+14.04,
+0,
+0,
+14.04,
+132.38,
+239.21
+],
+"width": 2.85,
+"height": 14.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Indicator",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+218.81
+],
+"width": 41.9,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+101.78,
+218.81
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "Context",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+218.81
+],
+"width": 37.5,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+253.37,
+218.81
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "Source",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+371.95,
+218.81
+],
+"width": 33.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+404.95,
+218.81
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "38.244.50[.]120",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+203.09
+],
+"width": 75.46,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+135.38,
+203.09
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "ARTEX host and open directory ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+203.09
+],
+"width": 147.33,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "(South Korea financial ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+189.62
+],
+"width": 106.68,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "campaign)",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+176.18
+],
+"width": 50.35,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+266.21,
+176.18
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "CrowdStrike⁶, Censys⁴",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+371.95,
+203.09
+],
+"width": 106.75,
+"height": 11.04,
+"fontName": "g_d0_f4"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+478.66,
+203.09
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "144.172.64[.]60",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+161.78
+],
+"width": 75.45,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+135.38,
+161.78
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "144.172.64[.]99",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+148.34
+],
+"width": 75.45,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+135.38,
+148.34
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "144.172.64[.]128",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+134.9
+],
+"width": 81.33,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+141.26,
+134.9
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "ConnectWise campaign; sign",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+161.78
+],
+"width": 138.5,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "-",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+354.55,
+161.78
+],
+"width": 3.75,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "ins and Graph API activity in ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+148.34
+],
+"width": 133.41,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "customer environments",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+134.9
+],
+"width": 113.41,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+329.35,
+134.9
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Microsoft²",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+371.95,
+161.78
+],
+"width": 48.93,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+420.79,
+161.78
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "187.15.88[.]186",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+120.5
+],
+"width": 75.47,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+135.38,
+120.5
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "187.15.90[.]217",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+107.06
+],
+"width": 75.47,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+135.38,
+107.06
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "187.15.89[.]186",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+93.62
+],
+"width": 75.47,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+135.38,
+93.62
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "Graph API access via ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+120.5
+],
+"width": 101.51,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "compromised apps (transient ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+107.06
+],
+"width": 142.42,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "VPN IPs relevant October 15",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+93.62
+],
+"width": 133.41,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "–",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+349.39,
+93.62
+],
+"width": 5.08,
+"height": 11.04,
+"fontName": "g_d0_f4"
+},
+{
+"str": "16, 2026)",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+80.18
+],
+"width": 43.93,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+259.73,
+80.18
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Microsoft²",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+371.95,
+120.5
+],
+"width": 48.93,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+420.79,
+120.5
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+}
+]
+},
+{
+"page": 7,
+"pageHeight": 792,
+"items": [
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+655.66
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+54,
+39.02
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "TLP:CLEAR",
+"transform": [
+12.96,
+0,
+0,
+12.96,
+273.05,
+776.64
+],
+"width": 64.46,
+"height": 12.96,
+"fontName": "g_d0_f2"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+337.63,
+776.64
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+305.33,
+753.48
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "TLP",
+"transform": [
+12.96,
+0,
+0,
+12.96,
+275.93,
+11.16
+],
+"width": 21.06,
+"height": 12.96,
+"fontName": "g_d0_f2"
+},
+{
+"str": ":",
+"transform": [
+12.96,
+0,
+0,
+12.96,
+296.93,
+11.16
+],
+"width": 3.89,
+"height": 12.96,
+"fontName": "g_d0_f2"
+},
+{
+"str": "CLEAR",
+"transform": [
+12.96,
+0,
+0,
+12.96,
+300.89,
+11.16
+],
+"width": 39.53,
+"height": 12.96,
+"fontName": "g_d0_f2"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+340.51,
+11.16
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "101.53.80[.]20",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+641.26
+],
+"width": 69.49,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+129.38,
+641.26
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "205.214.59[.]31",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+627.82
+],
+"width": 75.45,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+135.38,
+627.82
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "124.155.252[.]63",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+614.38
+],
+"width": 81.34,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+141.26,
+614.38
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "154.201.79[.]246",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+600.94
+],
+"width": 81.33,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+141.26,
+600.94
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "23.248.249[.]90",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+587.5
+],
+"width": 75.45,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+135.38,
+587.5
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "23.158.220[.]98",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+574.06
+],
+"width": 75.45,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+135.38,
+574.06
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "103.248.148[.]84",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+560.62
+],
+"width": 81.34,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+141.26,
+560.62
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "203.160.133[.]172",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+547.3
+],
+"width": 87.33,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+147.26,
+547.3
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "209.209.85[.]38",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+533.83
+],
+"width": 75.45,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+135.38,
+533.83
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "Proxy IP addresses (South ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+641.26
+],
+"width": 124.82,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Korea financial campaign)",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+627.82
+],
+"width": 123.31,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+339.31,
+627.82
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "CrowdStrike⁶",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+371.95,
+641.26
+],
+"width": 62.5,
+"height": 11.04,
+"fontName": "g_d0_f4"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+434.35,
+641.26
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "199.19.95[.]66",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+519.31
+],
+"width": 69.49,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+129.38,
+519.31
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "199.19.95[.]67",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+505.99
+],
+"width": 69.49,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+129.38,
+505.99
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "199.19.95[.]68",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+492.55
+],
+"width": 69.49,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+129.38,
+492.55
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "WISP C2 nodes (Storm",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+519.31
+],
+"width": 107.08,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "-",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+323.09,
+519.31
+],
+"width": 3.75,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "3358 ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+326.81,
+519.31
+],
+"width": 25.67,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "campaign; active as of ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+505.99
+],
+"width": 108.28,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "November 6, 2026)",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+492.55
+],
+"width": 89.99,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+305.81,
+492.55
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Microsoft",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+371.95,
+519.31
+],
+"width": 45.15,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "10",
+"transform": [
+6.48,
+0,
+0,
+6.48,
+417.19,
+523.27
+],
+"width": 6.96,
+"height": 6.48,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+424.03,
+519.31
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "91.92.240[.]238",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+478.03
+],
+"width": 75.45,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+135.38,
+478.03
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "85.11.168[.]45",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+464.71
+],
+"width": 69.46,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+129.38,
+464.71
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "178.16.54[.]129",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+451.27
+],
+"width": 75.47,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+135.38,
+451.27
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "31.77.229[.]35",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+437.83
+],
+"width": 69.46,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+129.38,
+437.83
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "ARTEX servers (Storm",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+478.03
+],
+"width": 101.86,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "-",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+317.93,
+478.03
+],
+"width": 3.75,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "3358 ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+321.65,
+478.03
+],
+"width": 25.67,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "campaign; active as of ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+464.71
+],
+"width": 108.28,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "November 6, 2026)",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+451.27
+],
+"width": 89.99,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+305.81,
+451.27
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Microsoft",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+371.95,
+478.03
+],
+"width": 45.15,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "10",
+"transform": [
+6.48,
+0,
+0,
+6.48,
+417.19,
+481.99
+],
+"width": 6.96,
+"height": 6.48,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+424.03,
+478.03
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "85.11.167[.]52",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+423.43
+],
+"width": 69.46,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+129.38,
+423.43
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "C2 server (Storm",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+423.43
+],
+"width": 79.36,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "-",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+295.37,
+423.43
+],
+"width": 3.75,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "3358 ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+299.09,
+423.43
+],
+"width": 25.75,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "campaign; active as of ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+409.99
+],
+"width": 108.28,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "November 6, 2026)",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+396.55
+],
+"width": 89.99,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+305.81,
+396.55
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Microsoft",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+371.95,
+423.43
+],
+"width": 45.15,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "10",
+"transform": [
+6.48,
+0,
+0,
+6.48,
+417.19,
+427.39
+],
+"width": 6.96,
+"height": 6.48,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+424.03,
+423.43
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Domains",
+"transform": [
+14.04,
+0,
+0,
+14.04,
+54,
+371.11
+],
+"width": 54.69,
+"height": 14.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+14.04,
+0,
+0,
+14.04,
+108.62,
+371.11
+],
+"width": 2.85,
+"height": 14.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Indicator",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+350.57
+],
+"width": 41.9,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+101.78,
+350.57
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "Context",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+350.57
+],
+"width": 37.5,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+253.37,
+350.57
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "Source",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+371.95,
+350.57
+],
+"width": 33.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+404.95,
+350.57
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "xcai[.]pro",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+334.97
+],
+"width": 45.06,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+104.9,
+334.97
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "LLM API reseller (South Korea ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+334.97
+],
+"width": 141.38,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "financial campaign)",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+321.53
+],
+"width": 93.52,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+309.41,
+321.53
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "CrowdStrike⁶",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+371.95,
+334.97
+],
+"width": 62.5,
+"height": 11.04,
+"fontName": "g_d0_f4"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+434.35,
+334.97
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Network and Behavioral Indicators",
+"transform": [
+14.04,
+0,
+0,
+14.04,
+54,
+296.21
+],
+"width": 207.86,
+"height": 14.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+14.04,
+0,
+0,
+14.04,
+261.89,
+296.21
+],
+"width": 2.85,
+"height": 14.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Indicator Type",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+275.69
+],
+"width": 66.36,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+126.26,
+275.69
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "Description",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+275.69
+],
+"width": 54.42,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+270.29,
+275.69
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "Source",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+371.95,
+275.69
+],
+"width": 33.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+404.95,
+275.69
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "Outbound API calls",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+259.97
+],
+"width": 89.79,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+149.66,
+259.97
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "api.anthropic.com, ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+259.97
+],
+"width": 93.39,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "api.deepseek.com, ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+246.53
+],
+"width": 93.76,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "open.bigmodel.cn, api.x.ai ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+233.09
+],
+"width": 128.51,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "(investigate unexpected calls ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+219.65
+],
+"width": 140.23,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "alongside other suspicious ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+206.21
+],
+"width": 129.54,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "activity)",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+192.89
+],
+"width": 37.28,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+253.13,
+192.89
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Zscaler⁷",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+371.95,
+259.97
+],
+"width": 38.78,
+"height": 11.04,
+"fontName": "g_d0_f4"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+410.71,
+259.97
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "HTTP request patterns",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+178.34
+],
+"width": 104.63,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+164.54,
+178.34
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "High",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+178.34
+],
+"width": 21.91,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "-",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+237.89,
+178.34
+],
+"width": 3.75,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "frequency automated ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+241.49,
+178.34
+],
+"width": 104.5,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "requests with sequential ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+164.9
+],
+"width": 118.87,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "enumeration against ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+151.46
+],
+"width": 100.08,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "login/search endpoints",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+138.14
+],
+"width": 109.3,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+325.25,
+138.14
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Zscaler⁷",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+371.95,
+178.34
+],
+"width": 38.78,
+"height": 11.04,
+"fontName": "g_d0_f4"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+410.71,
+178.34
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Data transfers",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+59.88,
+123.62
+],
+"width": 66.86,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+126.74,
+123.62
+],
+"width": 2.13,
+"height": 11.04,
+"fontName": "g_d0_f8"
+},
+{
+"str": "Outbound transfers of ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+123.62
+],
+"width": 107.03,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "structured data (names, ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+110.18
+],
+"width": 116.75,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "phone numbers, financial ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+96.86
+],
+"width": 123.58,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "information) over HTTPS to ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+215.93,
+83.42
+],
+"width": 128.48,
+"height": 11.04,
+"fontName": "g_d0_f1"
+},
+{
+"str": "Zscaler⁷",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+371.95,
+123.62
+],
+"width": 38.78,
+"height": 11.04,
+"fontName": "g_d0_f4"
+},
+{
+"str": " ",
+"transform": [
+11.04,
+0,
+0,
+11.04,
+410.71,
+123.62
+],
+"width": 2.24,
+"height": 11.04,
+"fontName": "g_d0_f1"
+}
+]
+}
+]
+}

@@ -1,0 +1,40 @@
+{
+  "id": "control-vue-slot-template-article",
+  "title": "Control: an article server-rendered inside a Vue slot <template> is content; menu, contact and cookie templates stay noise",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": ["control", "html_extractor", "vue_slot_template", "mode_a"],
+  "source": {
+    "kind": "html_file",
+    "path": "control-vue-slot-template-article.html",
+    "url": "https://vendor-labs.example/eng/expertise/blog/slot-rendered-actor/"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed from import audit 35890-35901 (35901 BI.ZONE: the whole article, its 'Indicators of compromise' section and ATT&CK table sat in <template v-slot:content>; htmlBlocks dropped every <template> as noise, leaving an 8-block stub and 0 of 42 Indicators)",
+      "verified_by": "construction",
+      "verified_at": "2026-11-14",
+      "notes": "api.ipify.org is an IP-echo utility in prose; the fallback address is described but not given; the contact and cookie templates carry the publisher's own site."
+    },
+    "indicators": [
+      { "type": "sha256", "value": "3f1c0f4f6c1e2a9b8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c", "assertion": "explicit" },
+      { "type": "sha256", "value": "9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b", "assertion": "explicit" },
+      { "type": "url", "value": "http://198.51.100.51/agent.exe", "assertion": "explicit" },
+      { "type": "url", "value": "http://198.51.100.51:5173/api/clients/7c1e4d2b9a8f6e5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d/stream/ws", "assertion": "explicit" },
+      { "type": "domain", "value": "slot-relay-update.example", "assertion": "explicit" },
+      { "type": "ip", "value": "198.51.100.51", "assertion": "explicit" },
+      { "type": "ip", "value": "203.0.113.87", "assertion": "explicit" }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      { "type": "domain", "value": "api.ipify.org" },
+      { "type": "url", "value": "https://vendor-labs.example/contacts/" },
+      { "type": "url", "value": "https://vendor-labs.example/cookies/" }
+    ],
+    "sections": [
+      { "heading": "Checksums", "expected": "authoritative" },
+      { "heading": "IP addresses", "expected": "authoritative" }
+    ]
+  }
+}

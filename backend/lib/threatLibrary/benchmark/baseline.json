@@ -1,20 +1,20 @@
 {
   "versions": {
-    "candidates": "tl-candidates-v67",
+    "candidates": "tl-candidates-v68",
     "zones": "tl-zones-v19",
     "tables": "tl-table-v19",
     "type_resolver": "tl-type-resolver-v28",
-    "html": "threat_library_html_v12",
-    "pdf": "threat_library_pdf_v8",
-    "quality": "tl-quality-v16",
+    "html": "threat_library_html_v13",
+    "pdf": "threat_library_pdf_v9",
+    "quality": "tl-quality-v17",
     "metrics": "tl-benchmark-metrics-v2"
   },
   "aggregate": {
-    "cases": 108,
-    "cases_exact": 106,
+    "cases": 110,
+    "cases_exact": 108,
     "indicators": {
-      "expected": 1558,
-      "tp": 1556,
+      "expected": 1590,
+      "tp": 1588,
       "fp": 0,
       "fn": 2,
       "fn_not_extracted": 0,
@@ -28,7 +28,7 @@
     "candidate_extraction_recall": 0.9994,
     "context_only_accuracy": 1,
     "legitimate_exclusion_accuracy": 1,
-    "assertion_accuracy": 0.9681,
+    "assertion_accuracy": 0.9691,
     "section_accuracy": 1,
     "non_indicators_promoted": 0,
     "ai_dependent_entries": 15,
@@ -38,7 +38,7 @@
       "warning": 3,
       "info": 26,
       "cases_flagged": 3,
-      "exact_cases": 106,
+      "exact_cases": 108,
       "exact_cases_flagged": 3,
       "failing_cases": 2,
       "failing_cases_flagged": 0
@@ -452,6 +452,28 @@
       "sections_checked": 1,
       "assertions_correct": 2,
       "assertions_checked": 2,
+      "warning_codes": []
+    },
+    "control-vue-slot-template-article": {
+      "members": [
+        "domain:slot-relay-update.example",
+        "ip:198.51.100.51",
+        "ip:203.0.113.87",
+        "sha256:3f1c0f4f6c1e2a9b8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c",
+        "sha256:9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b",
+        "url:http://198.51.100.51/agent.exe",
+        "url:http://198.51.100.51:5173/api/clients/7c1e4d2b9a8f6e5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d/stream/ws"
+      ],
+      "tp": 7,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 2,
+      "sections_checked": 2,
+      "assertions_correct": 7,
+      "assertions_checked": 7,
       "warning_codes": []
     },
     "golden-checkpoint-jsceal-appendix-b": {
@@ -2274,6 +2296,46 @@
       "warning_codes": [
         "non_file_digest_reclassified"
       ]
+    },
+    "pdf-ic3-flash-stacked-cells": {
+      "members": [
+        "domain:xcai.pro",
+        "ip:101.53.80.20",
+        "ip:103.248.148.84",
+        "ip:124.155.252.63",
+        "ip:144.172.64.128",
+        "ip:144.172.64.60",
+        "ip:144.172.64.99",
+        "ip:154.201.79.246",
+        "ip:178.16.54.129",
+        "ip:187.15.88.186",
+        "ip:187.15.89.186",
+        "ip:187.15.90.217",
+        "ip:199.19.95.66",
+        "ip:199.19.95.67",
+        "ip:199.19.95.68",
+        "ip:203.160.133.172",
+        "ip:205.214.59.31",
+        "ip:209.209.85.38",
+        "ip:23.158.220.98",
+        "ip:23.248.249.90",
+        "ip:31.77.229.35",
+        "ip:38.244.50.120",
+        "ip:85.11.167.52",
+        "ip:85.11.168.45",
+        "ip:91.92.240.238"
+      ],
+      "tp": 25,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 2,
+      "sections_checked": 2,
+      "assertions_correct": 25,
+      "assertions_checked": 25,
+      "warning_codes": []
     },
     "pdf-kimsuky-360-appendix": {
       "members": [

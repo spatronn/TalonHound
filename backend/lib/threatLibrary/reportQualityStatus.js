@@ -28,7 +28,7 @@ export const FINALIZE_OBLIGATION_CODES = Object.freeze({
  * Across the existing library these fire on about one report in 700, so they stop a
  * finalize without stopping ordinary work.
  */
-export const CRITICAL_QUALITY_CODES = Object.freeze(['explicit_table_rows_dropped', 'appendix_without_hash_indicators', 'reserved_indicator']);
+export const CRITICAL_QUALITY_CODES = Object.freeze(['explicit_table_rows_dropped', 'appendix_without_hash_indicators', 'reserved_indicator', 'ioc_section_region_dropped']);
 
 const CRITICAL = new Set(CRITICAL_QUALITY_CODES);
 
