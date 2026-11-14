@@ -1,0 +1,43 @@
+{
+  "id": "pdf-wrapped-narrow-cells",
+  "title": "Control: observables wrapped inside narrow PDF table cells (three-line SHA-1, mid-label domain cuts) stay whole Indicators",
+  "publisher": "synthetic",
+  "format": "pdf",
+  "tags": ["control", "pdf", "pdf_tables", "wrapped_cells", "defanged", "mode_a"],
+  "source": {
+    "kind": "pdf_items",
+    "path": "../../fixtures/pdf-wrapped-cells-pdf-items.json",
+    "pages_key": "pages"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed from the 34383 Gamaredon / 34385 GopherWhisper linked white papers (pdf_v7 split 'wwpeeya.ignores.wor' + 'kers[.]dev' with a space and turned the first line of three-line SHA-1 cells into structural headings); fixture is the pdf.js text items of the synthetic PDF built by pdfWrappedCells.test.js",
+      "verified_by": "construction",
+      "verified_at": "2026-11-14",
+      "notes": "alpha-node[.]ru and beta-node[.]net are two complete names in one cell (neither cut by the cell edge) and stay two Indicators. file.io and workers.dev after the IOC tables are prose mentions."
+    },
+    "indicators": [
+      { "type": "sha1", "value": "0ebf187cf4dd22b7a096727013022b3e66163982", "assertion": "explicit" },
+      { "type": "sha1", "value": "8bd1571cef00dddd4e0a409cc61065d248c23341", "assertion": "explicit" },
+      { "type": "sha1", "value": "304a4520bbe8d147ec853f5a95cd3c16b6fefe2b", "assertion": "explicit" },
+      { "type": "domain", "value": "qzx7.tunnel-pad.workers.dev", "assertion": "explicit" },
+      { "type": "domain", "value": "vk3.p4ad3742dd.workers.dev", "assertion": "explicit" },
+      { "type": "domain", "value": "cheese-metals-gourmet-talks.trycloudflare.com", "assertion": "explicit" },
+      { "type": "domain", "value": "asin-winston.trycloudflare.com", "assertion": "explicit" },
+      { "type": "domain", "value": "5ede4fc5ae051d7b1601142d283755e4.loophole.site", "assertion": "explicit" },
+      { "type": "domain", "value": "alpha-node.ru", "assertion": "explicit" },
+      { "type": "domain", "value": "beta-node.net", "assertion": "explicit" },
+      { "type": "ip", "value": "46.151.29.58", "assertion": "explicit" }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      { "type": "domain", "value": "file.io" },
+      { "type": "domain", "value": "workers.dev" }
+    ],
+    "sections": [
+      { "heading": "Files", "expected": "authoritative" },
+      { "heading": "Network", "expected": "authoritative" }
+    ]
+  }
+}

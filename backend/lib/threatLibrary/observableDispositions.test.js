@@ -9,6 +9,7 @@ import { extractReportCandidates } from './extractionStages.js';
 import { buildCandidateEvidenceRecord } from './evidencePolicy.js';
 import {
   DISPOSITIONS,
+  OBSERVABLE_DISPOSITION_VERSION,
   buildObservableDispositions,
   candidateDisposition,
   scanObservableTokens
@@ -126,4 +127,16 @@ test('discarded page regions are inventoried by kind with their observable token
   // Observable text outside the selected content root is visible too.
   assert.ok(byKind('outside_content_root').sample_observables.includes(SHA.replace('9', '7')));
   assert.ok(!JSON.stringify(regions).includes('<textarea'));
+});
+
+test('a digest-shaped label of an accounted hostname is part of that value, not a lost hash (tl-dispositions-v2)', () => {
+  assert.equal(OBSERVABLE_DISPOSITION_VERSION, 'tl-dispositions-v2');
+  const label = '5ede4fc5ae051d7b1601142d283755e4';
+  const r = extract(`<h2>Indicators of Compromise</h2><ul><li>${label}.loophole[.]site</li><li>tunnel-relay[.]example-c2.net</li></ul>`);
+  assert.ok(r.rows.some((c) => c.normalized_value === `${label}.loophole.site`), JSON.stringify(r.rows.map((c) => c.normalized_value)));
+  const out = buildObservableDispositions({ candidates: r.rows, tokenLog: r.tokenLog, blocks: r.annotated.blocks });
+  assert.equal(out.counts.undispositioned, 0, JSON.stringify(out.rows.filter((x) => x.reason_code === 'undispositioned_token')));
+  // Without the accounted hostname the digest-shaped label is still reported.
+  const loneOut = buildObservableDispositions({ candidates: [], tokenLog: [], blocks: r.annotated.blocks });
+  assert.ok(loneOut.rows.some((x) => x.reason_code === 'undispositioned_token' && x.normalized_value === label), JSON.stringify(loneOut.rows));
 });

@@ -17,7 +17,11 @@ import { isReportIndicatorMember, isLinkedSourceIndicatorMember } from './indica
 import { ipv4MatchIsStandalone } from './sourceOccurrence.js';
 import { normalizeCandidateValue } from './candidateValue.js';
 
-export const OBSERVABLE_DISPOSITION_VERSION = 'tl-dispositions-v1';
+/**
+ * v2: a digest-shaped token that is a whole label of an accounted hostname
+ * ("<32 hex>.loophole.site") is part of that value, not a lost hash.
+ */
+export const OBSERVABLE_DISPOSITION_VERSION = 'tl-dispositions-v2';
 
 export const DISPOSITIONS = Object.freeze({
   ACCEPTED: 'accepted',
@@ -196,6 +200,12 @@ export function buildObservableDispositions({ candidates = [], tokenLog = [], bl
 
   // Independent reconciliation: every typed token in a content block.
   const urlValues = [...accounted].filter((v) => /^(?:https?|wss?|ftp):\/\//.test(v));
+  const hostLabels = new Set(
+    [...accounted]
+      .filter((v) => /^[a-z0-9_.-]+$/.test(v) && v.includes('.'))
+      .flatMap((v) => v.split('.'))
+      .filter((l) => /^[a-f0-9]{32,128}$/.test(l))
+  );
   const seen = new Set();
   for (const b of blocks) {
     if (!b?.text || b.zone === 'header_footer' || b.layout === 'page_edge') continue;
@@ -213,6 +223,7 @@ export function buildObservableDispositions({ candidates = [], tokenLog = [], bl
       // A URL token the extractor bounded differently (a trailing fragment it
       // trimmed) or a value that is part of an accounted URL is accounted for.
       if (urlValues.some((u) => u.includes(value) || value.startsWith(u))) continue;
+      if (/^(?:md5|sha1|sha256|sha512)$/.test(t.type) && hostLabels.has(value)) continue;
       const residue = t.type === 'defang_residue';
       // "https://host/{campaign}" is a URL template, not a value.
       const template = t.type === 'url' && /[{}]|%7b|\$\{|<[^>]*>/i.test(value);

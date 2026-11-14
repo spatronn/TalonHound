@@ -156,7 +156,7 @@ const outcome = (c) => buildCandidateEvidenceRecord(c).membership_outcome;
 
 test('FP-2: a "Patch links" list of vendor advisory links is reference context, never review or Indicators', async () => {
   const { THREAT_LIBRARY_DOCUMENT_ZONES_VERSION } = await import('./documentZones.js');
-  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v18');
+  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v19');
   const x = run(`
 <h2>Indicators of Compromise (IoCs)</h2>
 <table><tr><th>Attack</th><th>Type</th><th>Value</th></tr>
