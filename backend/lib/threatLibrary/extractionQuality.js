@@ -16,10 +16,11 @@
 
 import { buildCandidateEvidenceRecord } from './evidencePolicy.js';
 import { isReportIndicatorMember } from './indicatorMembership.js';
-import { NEGATIVE_ZONES, STRONG_IOC_ZONES, THREAT_LIBRARY_DOCUMENT_ZONES_VERSION } from './documentZones.js';
+import { NEGATIVE_ZONES, STRONG_IOC_ZONES, THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, classifyHeadingText } from './documentZones.js';
 import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtraction.js';
 import { textDescribesValueAsBenign } from './indicatorScope.js';
 import { hasDelegatedDnsSuffix, suffixStrength } from './observableTypeResolver.js';
+import { isDescriptionColumnMention } from './tableSemantics.js';
 import { refangTextForExtraction } from './defang.js';
 import { annotateSectionTree } from './sectionTree/annotate.js';
 
@@ -84,8 +85,11 @@ import { annotateSectionTree } from './sectionTree/annotate.js';
  * scope-engine fallback so degraded membership semantics are analyst-visible.
  * v15 (evidence-first): check 28 reports observable-shaped text in page regions
  * normalization discarded (document.meta.source_accounting).
+ * v17 (import audit 35890–35901): check 28 raises the critical
+ * `ioc_section_region_dropped` when a dropped region carries an IOC section
+ * heading (BI.ZONE 35901: the whole article sat in a discarded <template>).
  */
-export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v16';
+export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v17';
 
 export const QUALITY_SEVERITIES = Object.freeze(['info', 'warning', 'high']);
 const SEVERITY_RANK = Object.freeze({ info: 1, warning: 2, high: 3 });
@@ -184,6 +188,8 @@ export const QUALITY_CODES = Object.freeze({
   TRUNCATED_URL_DUPLICATE_CONTEXT: 'truncated_url_duplicate_context',
   /** Observable-shaped text in page regions normalization discarded (check 28). */
   SOURCE_REGION_OBSERVABLES_DROPPED: 'source_region_observables_dropped',
+  /** A discarded page region held an Indicators-of-Compromise section heading (check 28, critical). */
+  IOC_SECTION_REGION_DROPPED: 'ioc_section_region_dropped',
   /** Publisher IOC-table rows made Context Only by a benign / provider row stance (check 27). */
   AUTHORITATIVE_TABLE_ROWS_DEMOTED: 'authoritative_table_rows_demoted'
 });
@@ -599,9 +605,13 @@ export function assessExtractionQuality(input) {
     'context_only_non_actionable_local',
     'context_only_rfc_example'
   ].includes(String(c.policy_decision || ''));
+  // A value written in the Description column of a headed table that is not an
+  // IOC table is a mention in that row's description (tl-candidates-v68), not
+  // a publisher row the extractor failed to read.
+  const describedInRow = (c, blockId) => isDescriptionColumnMention(blockById.get(blockId), c.original_value || c.normalized_value);
   const blockFullyCaptured = (blockId, covered) => {
     const list = [...(iocByBlock.get(blockId) || [])];
-    return list.length > 0 && list.every((c) => c.__member || deliberatelyExcluded(c) || (covered && coveredByMember(c)));
+    return list.length > 0 && list.every((c) => c.__member || deliberatelyExcluded(c) || describedInRow(c, blockId) || (covered && coveredByMember(c)));
   };
   const sc = diagnostics.structural_completeness || null;
   for (const d of sc?.degraded_blocks || []) {
@@ -926,7 +936,26 @@ export function assessExtractionQuality(input) {
 
   // Check 28: observable-shaped text in page regions normalization discarded
   // (a form field, an embedded document, a footer, text outside the content root).
-  const droppedRegions = (input?.documentMeta?.source_accounting?.dropped_regions || []).filter((r) => r?.significant === true);
+  const significantRegions = (input?.documentMeta?.source_accounting?.dropped_regions || []).filter((r) => r?.significant === true);
+  // A dropped region that carries an IOC section heading ("Indicators of
+  // compromise", "Network indicators") lost the publisher's Indicators, not
+  // page chrome: the document is not normally extracted (tl-quality-v17).
+  const iocRegions = significantRegions.filter((r) =>
+    (r.heading_texts || []).some((h) => classifyHeadingText(h) === 'explicit_ioc_section'));
+  if (iocRegions.length) {
+    const n = iocRegions.reduce((sum, r) => sum + (r.observable_count || 0), 0);
+    push({
+      code: QUALITY_CODES.IOC_SECTION_REGION_DROPPED,
+      severity: 'high',
+      explanation: `A page region holding an Indicators-of-Compromise section (${iocRegions.flatMap((r) => r.heading_texts || [])
+        .filter((h) => classifyHeadingText(h) === 'explicit_ioc_section').slice(0, 3).map((h) => `"${h}"`).join(', ')}) and ` +
+        `${n} observable-shaped value${n === 1 ? '' : 's'} was left out of the document. Its Indicators are missing from this report.`,
+      candidates: iocRegions.flatMap((r) => r.sample_observables || []).slice(0, T.maxListedCandidates),
+      block_ids: [],
+      section: { regions: iocRegions.slice(0, T.maxListedBlocks).map((r) => ({ kind: r.region_kind, reason: r.reason, locator: r.locator, observables: r.observable_count })) }
+    });
+  }
+  const droppedRegions = significantRegions.filter((r) => !iocRegions.includes(r));
   if (droppedRegions.length) {
     push({
       code: QUALITY_CODES.SOURCE_REGION_OBSERVABLES_DROPPED,

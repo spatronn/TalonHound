@@ -171,6 +171,26 @@ async function extractPdfWithFallback(pdfParse, buffer, pages) {
 }
 
 /**
+ * Report title for a PDF (pdf_v9): the document's Title metadata unless it is
+ * empty or only names the file / the authoring tool, then the title printed on
+ * the cover page, then the file name.
+ * @param {{ metadataTitle?: string|null, coverTitle?: string|null, fileName?: string|null }} input
+ */
+export function selectPdfTitle({ metadataTitle, coverTitle, fileName }) {
+  const stem = String(fileName || '').replace(/\.pdf$/i, '').trim();
+  const meta = String(metadataTitle || '').replace(/\s+/g, ' ').trim();
+  const metaIsFileName =
+    !meta ||
+    meta.toLowerCase() === stem.toLowerCase() ||
+    /\.(?:pdf|docx?|pptx?|xlsx?|odt|rtf)$/i.test(meta) ||
+    /^(?:microsoft (?:word|powerpoint) - |untitled)/i.test(meta);
+  if (!metaIsFileName) return meta;
+  const cover = String(coverTitle || '').trim();
+  if (cover) return cover;
+  return stem || meta || 'PDF report';
+}
+
+/**
  * Extract text by page using pdf-parse.
  * @param {Buffer} buffer
  * @param {{ fileName?: string }} [opts]
@@ -205,6 +225,7 @@ export async function pdfToCanonicalDocument(buffer, opts = {}) {
 
   // If pagerender did not populate (some pdf-parse versions), fall back to whole text
   let blocks = [];
+  let coverTitle = null;
   let layoutMode = 'geometry';
   if (pages.length === 0) {
     layoutMode = 'plain_text';
@@ -217,13 +238,16 @@ export async function pdfToCanonicalDocument(buffer, opts = {}) {
       idx = r.nextIdx;
     });
   } else {
-    blocks = pagesToBlocks(pages).blocks;
+    const laid = pagesToBlocks(pages);
+    blocks = laid.blocks;
+    coverTitle = laid.coverTitle;
   }
 
-  const title =
-    (data.info && (data.info.Title || data.info.title)) ||
-    validation.fileName.replace(/\.pdf$/i, '') ||
-    'PDF report';
+  const title = selectPdfTitle({
+    metadataTitle: data.info && (data.info.Title || data.info.title),
+    coverTitle,
+    fileName: validation.fileName
+  });
 
   // Language hint from CJK density
   const sample = blocks.map((b) => b.text).join('').slice(0, 800);

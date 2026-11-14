@@ -1,0 +1,59 @@
+{
+  "id": "pdf-ic3-flash-stacked-cells",
+  "title": "PDF: FBI FLASH IOC tables with stacked multi-value cells, top-aligned rows at wrapped-line pitch and a page-break continuation stay tables",
+  "publisher": "FBI / IC3",
+  "format": "pdf",
+  "tags": ["pdf", "pdf_tables", "stacked_cells", "page_continuation", "government_advisory", "mode_a"],
+  "source": {
+    "kind": "pdf_items",
+    "path": "../../fixtures/ic3-flash-ioc-tables-pdf-items.json",
+    "pages_key": "pages"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "import audit 35890-35901 (35894, FBI FLASH-20261113-001, TLP:CLEAR): pdf.js text items of pages 1, 6 and 7. pdf_v8 merged every row of the Indicator | Context | Source tables into one row (rows set at wrapped-line pitch), rejected the table and flattened it into paragraphs: 11 of 25 Indicators. Ground truth read from the published PDF.",
+      "verified_by": "audit",
+      "verified_at": "2026-11-14",
+      "notes": "The Network and Behavioral Indicators table lists legitimate LLM API endpoints to investigate when unexpected; they are not Indicators."
+    },
+    "indicators": [
+      { "type": "ip", "value": "38.244.50.120", "assertion": "explicit" },
+      { "type": "ip", "value": "144.172.64.60", "assertion": "explicit" },
+      { "type": "ip", "value": "144.172.64.99", "assertion": "explicit" },
+      { "type": "ip", "value": "144.172.64.128", "assertion": "explicit" },
+      { "type": "ip", "value": "187.15.88.186", "assertion": "explicit" },
+      { "type": "ip", "value": "187.15.90.217", "assertion": "explicit" },
+      { "type": "ip", "value": "187.15.89.186", "assertion": "explicit" },
+      { "type": "ip", "value": "101.53.80.20", "assertion": "explicit" },
+      { "type": "ip", "value": "205.214.59.31", "assertion": "explicit" },
+      { "type": "ip", "value": "124.155.252.63", "assertion": "explicit" },
+      { "type": "ip", "value": "154.201.79.246", "assertion": "explicit" },
+      { "type": "ip", "value": "23.248.249.90", "assertion": "explicit" },
+      { "type": "ip", "value": "23.158.220.98", "assertion": "explicit" },
+      { "type": "ip", "value": "103.248.148.84", "assertion": "explicit" },
+      { "type": "ip", "value": "203.160.133.172", "assertion": "explicit" },
+      { "type": "ip", "value": "209.209.85.38", "assertion": "explicit" },
+      { "type": "ip", "value": "199.19.95.66", "assertion": "explicit" },
+      { "type": "ip", "value": "199.19.95.67", "assertion": "explicit" },
+      { "type": "ip", "value": "199.19.95.68", "assertion": "explicit" },
+      { "type": "ip", "value": "91.92.240.238", "assertion": "explicit" },
+      { "type": "ip", "value": "85.11.168.45", "assertion": "explicit" },
+      { "type": "ip", "value": "178.16.54.129", "assertion": "explicit" },
+      { "type": "ip", "value": "31.77.229.35", "assertion": "explicit" },
+      { "type": "ip", "value": "85.11.167.52", "assertion": "explicit" },
+      { "type": "domain", "value": "xcai.pro", "assertion": "explicit" }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      { "type": "domain", "value": "api.anthropic.com" },
+      { "type": "domain", "value": "api.deepseek.com" },
+      { "type": "domain", "value": "open.bigmodel.cn" },
+      { "type": "domain", "value": "api.x.ai" }
+    ],
+    "sections": [
+      { "heading": "IP Addresses", "expected": "authoritative" },
+      { "heading": "Domains", "expected": "authoritative" }
+    ]
+  }
+}

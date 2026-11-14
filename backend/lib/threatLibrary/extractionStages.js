@@ -136,7 +136,8 @@ export async function rebuildDocumentFromRetainedSource(pool, report) {
 
 /**
  * Re-select the title of a URL report from its retained source HTML under the
- * current title rules (extract/titleSelection.js). The stored document keeps
+ * current title rules (extract/titleSelection.js); a PDF report whose title is
+ * only its file name takes the cover-page title of its rebuilt document. The stored document keeps
  * its blocks; only its title / title provenance change. Never re-fetches;
  * a report without retained HTML (or a non-URL / WeChat-adapter report) keeps
  * its title. Non-fatal.
@@ -148,7 +149,19 @@ export async function rebuildDocumentFromRetainedSource(pool, report) {
 export async function reselectReportTitle(pool, report, input) {
   const document = input.document;
   const unchanged = { document, changed: false };
-  if (report?.source_type !== 'url' || !hasUsableDocument(document)) return unchanged;
+  if (!hasUsableDocument(document)) return unchanged;
+  // A PDF report named after its file ("261113") because the PDF had no Title
+  // metadata takes the title the rebuilt document read from its cover page
+  // (pdf_v9). Only that file-name fallback is replaced: any other title (the
+  // PDF's own metadata, an analyst's edit) is kept.
+  if (document.meta?.adapter === 'pdf') {
+    const current = String(report?.title || '').trim();
+    const stem = String(document.meta.file_name || report?.source_file_name || '').replace(/\.pdf$/i, '').trim();
+    const next = String(document.title || '').trim();
+    if (!current || !stem || current.toLowerCase() !== stem.toLowerCase() || !next || next === current) return unchanged;
+    return { document, changed: true, title: next, previous_title: current, source: 'pdf_cover_title' };
+  }
+  if (report?.source_type !== 'url') return unchanged;
   if (document.meta?.adapter && !['generic_html', 'structured_fallback'].includes(document.meta.adapter)) return unchanged;
   try {
     let html = input.sourceHtml || null;

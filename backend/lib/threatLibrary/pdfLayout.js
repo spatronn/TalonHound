@@ -34,8 +34,14 @@ import { FILE_EXT_HINT, hasDelegatedDnsSuffix } from './observableTypeResolver.j
  * keep their space; a single-token fragment line that opens such a wrap (the
  * first line of a hash or domain split over two or three lines) continues the
  * table instead of ending it as a structural heading.
+ * v9 (import audit 35890–35901, IC3 FLASH): a table whose rows are set at the
+ * wrapped-line pitch (no row gap) is split at its top-aligned row lines (a
+ * full line after a partial one) instead of collapsing into one row and being
+ * rejected; a column-header line set in a non-body font is its own row; several
+ * values stacked in one cell stay one cell; a header-less table opening a page
+ * continues the previous page's table and takes its headers.
  */
-export const PDF_LAYOUT_VERSION = 'threat_library_pdf_v8';
+export const PDF_LAYOUT_VERSION = 'threat_library_pdf_v9';
 
 /** Fraction of page height (top/bottom) treated as printed header/footer band. */
 const PAGE_EDGE_FRACTION = 0.055;
@@ -589,12 +595,125 @@ export function rowBreakGap(members) {
   return (gaps[at - 1] + gaps[at]) / 2;
 }
 
+/** Dominant font of a line's cells by character count. */
+function lineFont(line) {
+  const fonts = new Map();
+  for (const c of line?.cells || []) if (c.fontName) fonts.set(c.fontName, (fonts.get(c.fontName) || 0) + c.text.length);
+  return dominantFont(fonts) || line?.fontName || null;
+}
+
+/** A cell fragment that ends mid-word / mid-token (the cell wrapped, the row did not end). */
+const WRAP_TAIL_RE = /[-‐–—/._:[(,]$/;
+
+/**
+ * The first line of a region is a column-header line: it fills every column,
+ * holds no observable, every cell is set in one font that is not a body font,
+ * and the line below it has body text (pdf_v9). Without known body fonts the
+ * line below must simply be set in another font.
+ * @param {{ line: PdfLine, assignment: number[] }} first
+ * @param {{ line: PdfLine, assignment: number[] }|undefined} next
+ * @param {number} width
+ * @param {Set<string>|null} bodyFonts
+ */
+function isColumnHeaderLine(first, next, width, bodyFonts) {
+  if (!next || first.assignment.length !== width) return false;
+  const cells = first.line.cells || [];
+  if (cells.some((c) => looksObservableLike(c.text) || c.text.length > 40)) return false;
+  const fonts = new Set(cells.map((c) => c.fontName || first.line.fontName || null));
+  if (fonts.size !== 1 || fonts.has(null)) return false;
+  const [font] = fonts;
+  if (bodyFonts && bodyFonts.size) {
+    if (bodyFonts.has(font)) return false;
+    return (next.line.cells || []).some((c) => bodyFonts.has(c.fontName || next.line.fontName));
+  }
+  const b = lineFont(next.line);
+  return Boolean(b && b !== font);
+}
+
+/** A complete observable value (IP, URL, hash, hostname) fills its cell by being the widest one. */
+function isCompleteObservableCell(text) {
+  return isObservableOnlyLine(String(text || '').trim());
+}
+
+/**
+ * Split rows that row-gap grouping merged in a table whose rows are set at the
+ * same pitch as wrapped lines (pdf_v9; FBI/IC3 FLASH IOC tables). Such a table
+ * still marks each row: the row's first line fills every column (values are
+ * top-aligned), the lines below it fill only the columns that wrap or stack
+ * several values (one IP per line in the indicator cell). A full line that
+ * follows a partial line starts a new row when nothing above it in its columns
+ * was cut by the cell edge. Consecutive full lines (every cell wrapping) stay
+ * one row, and a column-header line (another font, no observable) is its own
+ * row. Rows are only split, never merged.
+ * @param {{ columns: {x0:number,x1:number}[], members: { line: PdfLine, assignment: number[] }[] }} region
+ * @param {number[]} spans
+ */
+function anchorRowSpans(region, spans, bodyFonts = null, opts = {}) {
+  const width = region.columns.length;
+  if (width < 2) return spans;
+  // Only a table whose columns are declared splits this way: one that opens
+  // with a column-header line, or the page-top continuation of a headed table
+  // of the same width from the previous page. A header-less multi-column run
+  // keeps the row-gap grouping (and is rejected as before when that merges it).
+  const first = region.members[0];
+  const headed = spans[0] >= 2 && isColumnHeaderLine(first, region.members[1], width, bodyFonts);
+  const continued = opts.continuesHeadedTable === width;
+  if (!headed && !continued) return spans;
+  const out = [];
+  let cursor = 0;
+  for (const span of spans) {
+    const firstSpan = cursor === 0;
+    const rows = region.members.slice(cursor, cursor + span);
+    cursor += span;
+    if (span < 2) {
+      out.push(span);
+      continue;
+    }
+    const cuts = [];
+    let start = 0;
+    if (firstSpan && isColumnHeaderLine(rows[0], rows[1], width, bodyFonts)) {
+      cuts.push(1);
+      start = 1;
+    }
+    for (let k = start + 1; k < rows.length; k += 1) {
+      const m = rows[k];
+      const prev = rows[k - 1];
+      if (m.assignment.length !== width || prev.assignment.length === width) continue;
+      // The row being closed must itself have opened with a full line.
+      if (rows[start].assignment.length !== width) continue;
+      const cutAbove = m.assignment.some((col) => {
+        const j = prev.assignment.indexOf(col);
+        if (j === -1) return false;
+        const cell = prev.line.cells[j];
+        if (WRAP_TAIL_RE.test(cell.text)) return true;
+        return cellFillsColumn(cell, region.columns[col]) && !isCompleteObservableCell(cell.text);
+      });
+      if (cutAbove) continue;
+      cuts.push(k);
+      start = k;
+    }
+    if (!cuts.length) {
+      out.push(span);
+      continue;
+    }
+    let from = 0;
+    for (const c of cuts) {
+      out.push(c - from);
+      from = c;
+    }
+    out.push(rows.length - from);
+  }
+  return out;
+}
+
 /**
  * @param {{ columns: {x0:number,x1:number}[], members: { line: PdfLine, assignment: number[] }[] }} region
  * @param {number} pitch
  */
-function regionToRows(region, pitch) {
-  const { colPos, spans } = groupRegionRows(region, pitch);
+function regionToRows(region, pitch, bodyFonts = null, opts = {}) {
+  const grouped = groupRegionRows(region, pitch);
+  const { colPos } = grouped;
+  const spans = anchorRowSpans(region, grouped.spans, bodyFonts, opts);
   const width = region.columns.length;
   const rows = [];
   let cursor = 0;
@@ -662,7 +781,11 @@ export function detectTableRegions(src, ctx) {
         continue;
       }
     }
-    let rows = regionToRows(region, ctx.pitch);
+    // The first content of a page may continue the headed table that closed the previous page.
+    const atPageTop = src.slice(0, i).every((l) => l.pageEdge || l.repeated);
+    let rows = regionToRows(region, ctx.pitch, ctx.bodyFonts, {
+      continuesHeadedTable: atPageTop ? ctx.continuesHeadedTable || null : null
+    });
     let startMember = 0;
     let endMember = region.members.length;
     while (rows.length > 2 && isStrayEdgeRow(rows, rows.length - 1)) {
@@ -1194,12 +1317,100 @@ export function pagesToBlocks(pages) {
   const pitch = prosePitch(perPageLines, bodyHeight);
   let blocks = [];
   let idx = 1;
+  let continuesHeadedTable = null;
   for (const p of perPageLines) {
-    const r = linesToBlocks(p.lines, { pageNum: p.page, startIdx: idx, bodyFonts: fonts, bodyHeight, prosePitch: pitch });
+    const r = linesToBlocks(p.lines, { pageNum: p.page, startIdx: idx, bodyFonts: fonts, bodyHeight, prosePitch: pitch, continuesHeadedTable });
     blocks = blocks.concat(r.blocks);
     idx = r.nextIdx;
+    // Width of the headed table that closes this page, if any (pdf_v9 continuation).
+    const last = [...r.blocks].reverse().find((b) => b.layout !== 'page_edge');
+    continuesHeadedTable = last?.type === 'table' && Array.isArray(last.table?.headers) ? last.table.headers.length : null;
   }
-  return { blocks, bodyFonts: [...fonts], bodyHeight };
+  return {
+    blocks: inheritContinuationHeaders(blocks),
+    bodyFonts: [...fonts],
+    bodyHeight,
+    coverTitle: pdfCoverTitle(perPageLines[0]?.lines || [], bodyHeight)
+  };
+}
+
+/** Cover title lines are set clearly larger than body text. */
+const COVER_TITLE_HEIGHT_FACTOR = 1.4;
+const MAX_COVER_TITLE_CHARS = 200;
+
+/**
+ * Title printed on the first page (pdf_v9): the run of consecutive lines set
+ * in the largest glyph height on page 1 (one font), outside the printed
+ * header / footer band and repeated running lines, and clearly larger than
+ * body text. Used when the PDF carries no Title metadata, so a report is not
+ * named after its file ("261113.pdf"). Null when no line stands out.
+ * @param {PdfLine[]} lines
+ * @param {number} bodyHeight
+ */
+export function pdfCoverTitle(lines, bodyHeight) {
+  const usable = (lines || []).filter((l) => !l.pageEdge && !l.repeated && /\p{L}{2}/u.test(l.text || ''));
+  if (!usable.length || !(bodyHeight > 0)) return null;
+  const top = Math.max(...usable.map((l) => l.height || 0));
+  if (!(top >= COVER_TITLE_HEIGHT_FACTOR * bodyHeight)) return null;
+  const near = (l) => Math.abs((l.height || 0) - top) <= 0.5;
+  const start = usable.findIndex(near);
+  const run = [usable[start]];
+  for (let i = start + 1; i < usable.length && near(usable[i]) && usable[i].fontName === run[0].fontName; i += 1) {
+    // Title lines sit at title pitch; a larger gap starts something else.
+    if (run[run.length - 1].y - usable[i].y > 2 * top) break;
+    run.push(usable[i]);
+  }
+  const title = run.map((l) => l.text.trim()).join(' ').replace(/\s+/g, ' ').trim();
+  return title && title.length <= MAX_COVER_TITLE_CHARS ? title : null;
+}
+
+/**
+ * A table that breaks across a page continues on the next page without its
+ * header row. When the first content block of a page is a header-less table
+ * as wide as the header-bearing table that closes the previous page (only
+ * printed header/footer lines between them), it is that table's continuation:
+ * it takes the same column headers so its rows keep their Indicator / Context /
+ * Source reading (pdf_v9). The block stays on its own page; `continued_from`
+ * names the block it continues.
+ * @param {object[]} blocks
+ */
+export function inheritContinuationHeaders(blocks) {
+  const content = (b) => b && b.layout !== 'page_edge';
+  let lastOfPrevPage = null;
+  let page = null;
+  let firstOnPage = true;
+  let lastContent = null;
+  const out = blocks.slice();
+  for (let i = 0; i < out.length; i += 1) {
+    const b = out[i];
+    if (b.page !== page) {
+      lastOfPrevPage = lastContent;
+      page = b.page;
+      firstOnPage = true;
+    }
+    if (!content(b)) continue;
+    if (firstOnPage) {
+      firstOnPage = false;
+      const prev = lastOfPrevPage;
+      const width = (t) => (t?.rows?.[0] || []).length;
+      if (
+        b.type === 'table' && !b.table?.headers &&
+        prev?.type === 'table' && Array.isArray(prev.table?.headers) &&
+        prev.page === b.page - 1 && width(b.table) === prev.table.headers.length
+      ) {
+        const rebuilt = createTableBlock({
+          id: b.id,
+          page: b.page,
+          headers: prev.table.headers,
+          rows: b.table.rows,
+          source: b.table.source || 'pdf_geometry'
+        });
+        if (rebuilt) out[i] = { ...rebuilt, continued_from: prev.continued_from || prev.id };
+      }
+    }
+    lastContent = out[i];
+  }
+  return out;
 }
 
 /**

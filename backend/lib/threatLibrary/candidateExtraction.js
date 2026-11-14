@@ -325,8 +325,13 @@ export {
  * key prefix ("imphash:<hex> (note)") is labelled by that prefix, not the
  * trailing note; a host after a percent escape ("%7Cpool.example") does not
  * absorb the escape's hex digits.
+ * v68 (import audit 35890–35901): tl-section-tree-v20, threat_library_html_v13
+ * and threat_library_pdf_v9. A value inside the Description column of a headed
+ * table that is not an IOC table (no indicator column: "Indicator Type |
+ * Description | Source") is a mention in that row's description, never an
+ * indicator row of its own.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v67';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v68';
 
 import { normalizeObservable } from '../observable-normalization.js';
 import { refangObservable, refangTextForExtraction } from './defang.js';

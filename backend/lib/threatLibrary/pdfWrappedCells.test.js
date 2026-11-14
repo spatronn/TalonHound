@@ -181,7 +181,7 @@ async function paper() {
 }
 
 test('contract versions: pdf_v8 layout, tl-zones-v19', () => {
-  assert.equal(PDF_LAYOUT_VERSION, 'threat_library_pdf_v8');
+  assert.equal(PDF_LAYOUT_VERSION, 'threat_library_pdf_v9');
   assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v19');
 });
 

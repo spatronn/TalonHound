@@ -46,10 +46,14 @@ import { createTableBlock } from '../canonicalDocument.js';
  * placeholders by inline `$RS` / `$RC` calls. The segments are put back where
  * the page renders them, so the tail rows of a table stay in that table and
  * under its heading instead of trailing the article as detached blocks.
- * Document extractor contract is threat_library_html_v12 so Refresh rebuilds
+ * v13 (import audit 35890–35901): a `<template>` holding the article (Vue /
+ * Nuxt slot content, `<template v-slot:content>`) is content, not noise; menus,
+ * banners and React streaming placeholders stay noise (isContentTemplate).
+ * Dropped regions record whether they held an IOC section heading.
+ * Document extractor contract is threat_library_html_v13 so Refresh rebuilds
  * retained HTML under the current contract.
  */
-export const HTML_BLOCKS_VERSION = 'threat_library_html_v12';
+export const HTML_BLOCKS_VERSION = 'threat_library_html_v13';
 
 export function stripTags(s) {
   return String(s || '').replace(/<[^>]+>/g, ' ');
@@ -91,7 +95,57 @@ const NOISE_TAGS = new Set(['script', 'style', 'noscript', 'svg', 'nav', 'footer
  */
 function isNoiseElement(node, tag) {
   if (!NOISE_TAGS.has(tag)) return false;
+  if (tag === 'template') return !isContentTemplate(node);
   return !(tag === 'noscript' && hasDescendantTag(node, STATIC_FALLBACK_TAGS));
+}
+
+/** React streaming placeholders (`P:x`, `B:x`) are resolved by resolveStreamingSegments, never read as content. */
+const STREAM_PLACEHOLDER_ID_RE = /^[PBS]:[\w-]+$/;
+/** An article-shaped template: several headings, prose / list / table structure and real text mass. */
+const CONTENT_TEMPLATE_MIN_HEADINGS = 2;
+const CONTENT_TEMPLATE_MIN_BLOCKS = 5;
+const CONTENT_TEMPLATE_MIN_CHARS = 1500;
+const CONTENT_TEMPLATE_BLOCK_TAGS = new Set(['p', 'li', 'table', 'pre', 'blockquote']);
+const contentTemplateCache = new WeakMap();
+
+/**
+ * A `<template>` that carries the page's article (v13). Vue / Nuxt server
+ * renders slot content as `<template v-slot:content>` / `<template #content>`
+ * inside the component element and hydrates it client-side: BI.ZONE ships its
+ * whole article, IOC section and ATT&CK table that way, and the page keeps
+ * nothing outside it. Menus, link lists, cookie banners and empty React
+ * streaming placeholders are templates too and stay noise; only a template
+ * holding article structure (two or more headings, five or more paragraph /
+ * list / table blocks and at least 1,500 characters of text) is content.
+ * @param {object} node
+ */
+export function isContentTemplate(node) {
+  if (!node || tagOf(node) !== 'template') return false;
+  if (contentTemplateCache.has(node)) return contentTemplateCache.get(node);
+  let verdict = false;
+  if (!STREAM_PLACEHOLDER_ID_RE.test(String(attr(node, 'id') || ''))) {
+    let headings = 0;
+    let blocks = 0;
+    let chars = 0;
+    const visit = (n, depth) => {
+      if (!n || depth > 60) return;
+      if (n.type === 'text') {
+        chars += String(n.data || '').replace(/\s+/g, ' ').trim().length;
+        return;
+      }
+      if (!isElement(n)) return;
+      const t = tagOf(n);
+      // Nested noise (scripts, styles, nested non-content templates) adds nothing.
+      if (NOISE_TAGS.has(t) && t !== 'template') return;
+      if (HEADING_TAGS.has(t)) headings += 1;
+      else if (CONTENT_TEMPLATE_BLOCK_TAGS.has(t)) blocks += 1;
+      for (const c of n.children || []) visit(c, depth + 1);
+    };
+    for (const c of node.children || []) visit(c, 0);
+    verdict = headings >= CONTENT_TEMPLATE_MIN_HEADINGS && blocks >= CONTENT_TEMPLATE_MIN_BLOCKS && chars >= CONTENT_TEMPLATE_MIN_CHARS;
+  }
+  contentTemplateCache.set(node, verdict);
+  return verdict;
 }
 
 const STATIC_FALLBACK_TAGS = new Set(['pre', 'table']);
@@ -109,7 +163,7 @@ const HEADING_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
 const PARAGRAPH_TAGS = new Set(['p', 'blockquote', 'dd', 'dt', 'address', 'summary']);
 const CAPTION_TAGS = new Set(['caption', 'figcaption']);
 /** Containers we descend into; direct text inside them forms paragraphs. */
-const CONTAINER_TAGS = new Set(['div', 'section', 'article', 'main', 'body', 'html', 'aside', 'header', 'details', 'figure', 'form', 'fieldset', 'center', 'font', 'span', 'label', 'legend', 'hgroup', 'ul', 'ol', 'dl', 'menu', 'li', 'tbody', 'thead', 'tfoot', 'tr', 'td', 'th']);
+const CONTAINER_TAGS = new Set(['div', 'section', 'article', 'main', 'body', 'html', 'aside', 'header', 'details', 'figure', 'form', 'fieldset', 'center', 'font', 'span', 'label', 'legend', 'hgroup', 'ul', 'ol', 'dl', 'menu', 'li', 'tbody', 'thead', 'tfoot', 'tr', 'td', 'th', 'template']);
 
 /** Cloudflare email obfuscation: `<a|span … data-cfemail="HEX">[email protected]</a|span>`. */
 const CF_EMAIL_ELEMENT_RE = /<(a|span)\b([^>]*?)\bdata-cfemail\s*=\s*["']([0-9a-f]+)["']([^>]*)>[\s\S]*?<\/\1\s*>/gi;
@@ -539,6 +593,8 @@ const OBSERVABLE_SHAPES = Object.freeze([
 
 /** Observable-shaped tokens kept from a dropped region, per region. */
 const MAX_REGION_SAMPLES = 20;
+/** Heading texts kept from a dropped region, per region. */
+const MAX_REGION_HEADINGS = 12;
 
 /**
  * Text of a dropped region. With `embedded`, the text of descendant
@@ -597,6 +653,12 @@ function describeDroppedRegion(node, tag, reason) {
   const types = { ...shapes.types };
   for (const [k, n] of Object.entries(embeddedShapes.types)) types[k] = (types[k] || 0) + n;
   const cls = String(node.attribs?.class || node.attribs?.id || '').trim().slice(0, 60);
+  // Section headings inside the region (v13): the quality check reads them to
+  // tell a dropped IOC section from dropped chrome. Text only, bounded.
+  const headingTexts = nonText ? [] : findElements(node, (el) => HEADING_TAGS.has(tagOf(el)))
+    .map((el) => textOf(el).slice(0, 120))
+    .filter(Boolean)
+    .slice(0, MAX_REGION_HEADINGS);
   return {
     region_kind: tag,
     reason,
@@ -606,7 +668,8 @@ function describeDroppedRegion(node, tag, reason) {
     observable_types: types,
     // Script / style content is counted, its tokens are not kept.
     sample_observables: nonText ? [] : shapes.samples,
-    significant: !nonText && shapes.count > 0
+    significant: !nonText && shapes.count > 0,
+    ...(headingTexts.length ? { heading_texts: headingTexts } : {})
   };
 }
 

@@ -93,10 +93,11 @@ const members = (report, document) =>
     .sort();
 
 test('stored documents of an earlier PDF contract are not current', () => {
-  assert.equal(THREAT_LIBRARY_PDF_EXTRACTOR_VERSION, 'threat_library_pdf_v8');
+  assert.equal(THREAT_LIBRARY_PDF_EXTRACTOR_VERSION, 'threat_library_pdf_v9');
   assert.equal(isDocumentContractCurrent({ source_type: 'pdf' }, V5_DOCUMENT), false);
   assert.equal(isDocumentContractCurrent({ source_type: 'pdf' }, { ...V5_DOCUMENT, meta: { ...V5_DOCUMENT.meta, extractor: 'threat_library_pdf_v7' } }), false);
-  assert.equal(isDocumentContractCurrent({ source_type: 'pdf' }, { ...V5_DOCUMENT, meta: { ...V5_DOCUMENT.meta, extractor: 'threat_library_pdf_v8' } }), true);
+  assert.equal(isDocumentContractCurrent({ source_type: 'pdf' }, { ...V5_DOCUMENT, meta: { ...V5_DOCUMENT.meta, extractor: 'threat_library_pdf_v8' } }), false);
+  assert.equal(isDocumentContractCurrent({ source_type: 'pdf' }, { ...V5_DOCUMENT, meta: { ...V5_DOCUMENT.meta, extractor: 'threat_library_pdf_v9' } }), true);
 });
 
 test('Refresh rebuilds a pdf_v5 document from the stored PDF upload; dense inventory hashes become Indicators', async (t) => {
@@ -116,7 +117,7 @@ test('Refresh rebuilds a pdf_v5 document from the stored PDF upload; dense inven
 
   const { document, documentRebuilt } = await prepareRefreshDocument(pool, report);
   assert.equal(documentRebuilt, true);
-  assert.equal(document.meta.extractor, 'threat_library_pdf_v8');
+  assert.equal(document.meta.extractor, 'threat_library_pdf_v9');
   assert.notEqual(document, V5_DOCUMENT);
   const row = document.blocks.find((b) => SAMPLES.every((s) => String(b.text).includes(s.hash)));
   assert.ok(row, JSON.stringify(document.blocks.map((b) => [b.type, b.text])));

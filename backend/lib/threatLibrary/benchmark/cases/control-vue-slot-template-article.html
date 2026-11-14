@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head><title>Slot-rendered article (Vue / Nuxt template slots)</title></head>
+<body>
+<div id="app">
+<v-header>
+  <template #logo><a href="/">Vendor</a></template>
+  <template #link-47><a href="/eng/expertise/">Expertise</a></template>
+  <template #info-1836><p>Incident response hotline, 24/7. Contact the team at https://vendor-labs.example/contacts/ or call us.</p></template>
+  <template #contacts><p>Moscow office, research desk.</p></template>
+</v-header>
+<main>
+<section>
+<div class="wrapper">
+<v-blog>
+  <template v-slot:partipants>Research team</template>
+  <template v-slot:date>27 October 2026</template>
+  <template v-slot:content>
+    <h1>New data reveals espionage focus of a slot-rendered actor</h1>
+    <h2>Overview</h2>
+    <p>In the course of monitoring, we discovered a new remote access trojan and observed for the first time the threat actor using an open-source post-exploitation framework against government and industrial organizations.</p>
+    <p>The initial access vector remained phishing: archives with malicious MSI installers delivered from a compromised mailbox, with lure documents tailored to each recipient organization.</p>
+    <h2>Key findings</h2>
+    <ul>
+      <li>The actor moved from financially motivated intrusions to espionage against government targets.</li>
+      <li>The new trojan supports a fallback command server that the operators can set from the command line.</li>
+      <li>The implant learns its public address from api.ipify.org before registering with the server.</li>
+    </ul>
+    <h2>Trojan analysis</h2>
+    <p>The trojan copies itself to the user profile, creates a scheduled task named WindowsUpdate and connects to its command server over WebSocket. Every infected host receives an identifier that appears in the WebSocket path.</p>
+    <p>If the configuration contains a placeholder, the trojan falls back to a hardcoded address that we did not observe in use during the investigation.</p>
+    <h2>Indicators of compromise</h2>
+    <h3>Checksums</h3>
+    <p>3f1c0f4f6c1e2a9b8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c</p>
+    <p>9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b</p>
+    <h3>Network indicators</h3>
+    <h4>URLs</h4>
+    <p>hxxp://198.51.100[.]51/agent.exe</p>
+    <p>hxxp://198.51.100[.]51:5173/api/clients/7c1e4d2b9a8f6e5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d/stream/ws</p>
+    <h4>Domains</h4>
+    <p>slot-relay-update[.]example</p>
+    <h4>IP addresses</h4>
+    <p>198.51.100[.]51</p>
+    <p>203.0.113[.]87</p>
+    <h2>How to protect your company from such threats</h2>
+    <p>Keep mail gateways updated, restrict execution of installers from user-writable directories and monitor outbound WebSocket connections to unusual ports.</p>
+  </template>
+</v-blog>
+<v-ajax>
+  <template v-slot:items><a href="/eng/expertise/blog/other-post/">Other research</a></template>
+</v-ajax>
+</div>
+</section>
+</main>
+<footer><p>© Vendor</p></footer>
+<v-cookie><template v-slot:title>We use cookies to improve this site. Read the policy at https://vendor-labs.example/cookies/</template></v-cookie>
+</div>
+</body>
+</html>

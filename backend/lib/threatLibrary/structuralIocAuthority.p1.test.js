@@ -32,11 +32,11 @@ import {
 } from './pdfLayout.js';
 
 assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v19');
-assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v67');
-assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v12');
-assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v12');
+assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v68');
+assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v13');
+assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v13');
 assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v19');
-assert.equal(PDF_LAYOUT_VERSION, 'threat_library_pdf_v8');
+assert.equal(PDF_LAYOUT_VERSION, 'threat_library_pdf_v9');
 
 const member = (c) => isReportIndicatorMember({ ...c, evidence: buildCandidateEvidenceRecord(c) });
 const find = (cands, type, value) => cands.find((c) => c.candidate_type === type && c.normalized_value === value);

@@ -12,6 +12,7 @@ import { refangObservable } from './defang.js';
 import { isCredentialLabeledHex, isIndicatorRowShape, lineContainingObservable, tableRowProviderOwnedByOperation } from './indicatorScope.js';
 import { FILE_EXT_HINT, NON_NETWORK_RESOLVED_TYPES, RESOLVED_TYPES, buildTypeResolutionRecord, hasDelegatedDnsSuffix, isMutexLabeledValue, parseArtifactTypeLabel } from './observableTypeResolver.js';
 import { isOnlyEmbeddedInDnsHostname } from './sourceOccurrence.js';
+import { isDescriptionColumnMention } from './tableSemantics.js';
 import { DIGEST_KINDS, NON_FILE_DIGEST_KINDS, classifyHexDigest } from './digestSemantics.js';
 import { samePublisherHostFamily, surroundingWindow, URL_SCHEME_PREFIX_RE, markTruncatedUrlDuplicates, MAX_TABLE_ROWS_PER_CANDIDATE, OCCURRENCE_FORMS, annotatedDigestWindow, locateInBlockText, HASH_CANDIDATE_TYPES, MIN_TRUNCATED_DIGEST_PREFIX, candidateKey, digestColumnHeader } from './candidateHelpers.js';
 
@@ -63,7 +64,13 @@ export function createCandidateAccumulator(ctx) {
       block?.zone_reason === 'observable_list' ||
       block?.zone_reason === 'cidr_list' ||
       block?.zone_reason === 'ioc_table');
-    const rowShape = !emailPart && !structuralRow && text ? isIndicatorRowShape(text, focus || focusValue) : false;
+    // A value read from a headed table the IOC-table interpreter did not take
+    // (no indicator column) sits in a cell; inside a Description column it is
+    // a mention in the row's description, never a row of its own
+    // ("Outbound API calls | api.vendor.example, … (investigate unexpected
+    // calls) | Source", tl-candidates-v68).
+    const descriptionCellMention = !emailPart && !structuralRow && isDescriptionColumnMention(block, focus || focusValue);
+    const rowShape = !emailPart && !structuralRow && !descriptionCellMention && text ? isIndicatorRowShape(text, focus || focusValue) : false;
     const located = locateInBlockText(block?.text, focus || focusValue);
     const tableOrdinal = block?.type === 'table' ? tableOrdinals.get(block?.id) : undefined;
     return {
