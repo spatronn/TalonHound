@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head><title>Streamed IOC table under a content-root fallback</title></head>
+<body>
+<div class="post-content">
+<h1>Device-code phishing cluster</h1>
+<p>Background paragraph describing the intrusion set and its tooling across several environments.</p>
+<h2>Analysis</h2>
+<p>The loader beacons to its staging server and pulls a second stage over HTTPS.</p>
+<h2>E. Network indicators</h2>
+<table><thead><tr><th>Indicator</th><th>Type</th><th>Description</th></tr></thead>
+<tbody><tr><td><p>hxxps://198.51.100[.]10/s</p></td><td><p>URL</p></td><td><p>Stager download path</p></td></tr><template id="P:5"></template></tbody></table>
+<h2>F. Conclusion</h2>
+<p>The actor continues to evolve its toolset and infrastructure over time.</p>
+</div>
+<table hidden><tbody id="S:5"><tr><td><p>198.51.100[.]10</p></td><td><p>IPv4</p></td><td><p>Stager hosting and beacon endpoint</p></td></tr><tr><td><p>lookalike-signin[.]example</p></td><td><p>Domain</p></td><td><p>Device-code phishing lookalike</p></td></tr><tr><td><p>203.0.113[.]77</p></td><td><p>IPv4</p></td><td><p>Primary C2 VPS</p></td></tr></tbody></table>
+<script>$RS=function(a,b){};$RS("S:5","P:5")</script>
+</body>
+</html>

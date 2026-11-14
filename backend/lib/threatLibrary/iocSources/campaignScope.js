@@ -25,7 +25,9 @@
 import { createCanonicalDocument, createTableBlock } from '../canonicalDocument.js';
 import { canonicalizeReportUrl } from '../importIdentity.js';
 
-export const IOC_SOURCE_SCOPE_VERSION = 'tl-ioc-source-scope-v8';
+// v9: a linked PDF yields its canonical document (the pdfIngest wrapper was read as
+// the document → 0 values), scoped to its own report Indicator membership.
+export const IOC_SOURCE_SCOPE_VERSION = 'tl-ioc-source-scope-v9';
 
 /**
  * Section headings that never hold indicators. Antivirus detection-name lists
