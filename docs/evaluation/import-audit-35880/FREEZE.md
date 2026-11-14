@@ -37,16 +37,16 @@ Committed (derived, no full publisher text):
 | File | sha256 |
 |---|---|
 | `first-pass-extraction-runs.jsonl` | `9ef8e51f9abb5023b8621046c657e4816e10e83ddbf2579749c33cb3f4bb92bf` |
-| `first-pass-captures/35880-eset-turla-cereal.json` | `6f7d209991dac1cf79d4672bc0e935f055dce5b34a9e8e4ff2ccab7aa8041e30` |
-| `first-pass-captures/35881-elastic-sansar.json` | `77d11dafb07d31d005f1a4c511a5a2b66014e692e1e25bd039308e2e4f34c0be` |
-| `first-pass-captures/35882-checkpoint-php2shell-gateway.json` | `e5a46002ea71e3841e90be7240530ff4aa85f1b8fc9d2fec77f3b39ee4ce4c2c` |
-| `first-pass-captures/35883-fortinet-tsql-mssql.json` | `3aae47c3e7242eb5e1ea105b10c8275c62b1d7ec396825ab852074354d93e475` |
-| `first-pass-captures/35884-huntress-geovision.json` | `d8136c00129e31610b2eb8d774749ffcf859eba9422a7f69ef6c4e9eafba429f` |
-| `first-pass-captures/35885-securelist-esxi.json` | `0a703514b9e53da3024425b78ce653a01f04be9ec41252d0ad4d00a38d1e6518` |
-| `first-pass-captures/35886-symantec-ai-retailer.json` | `86e7261d0c28aa8a1947bdbfa954a2d6baa4a384394039ce4c9eeea8bf06c327` |
-| `first-pass-captures/35887-groupib-darklunnen.json` | `ec9657d743a04063494c975286b4cfcebe48688351ea6be0296c9d24904c6197` |
-| `first-pass-captures/35888-rl-midnight-blizzard.json` | `bcfeed899663b96397bad41b5fb1d9665972e14a6d9e1cafed3ae79330dcfec1` |
-| `first-pass-captures/35889-asec-snakekeylogger.json` | `3b9e2b3ed294199942a17503606d424d2d419f814b60a905bf974fa9cad07fe6` |
+| `first-pass-captures/35880-eset-turla-cereal.json` | `34051a0bf2ff2faaf0a73f2a2d5f7d0d25ced3d408ec7cd9e1cdac3d9d2ae808` |
+| `first-pass-captures/35881-elastic-sansar.json` | `5019f0dab0d506e7b8e03849bbd33b1e1871142e07fec3f1a053c3e1a5f59ea5` |
+| `first-pass-captures/35882-checkpoint-php2shell-gateway.json` | `e46bb9b47554bdcc5f64b2c57a1f1275353c1c568a11c51e87588c913c053d9b` |
+| `first-pass-captures/35883-fortinet-tsql-mssql.json` | `79de251bebfde3d5df5c2866ef91630ce4da4ef7664a7a22cfaf5d3802d25cce` |
+| `first-pass-captures/35884-huntress-geovision.json` | `0829bccb9d0ee4cc072a22e80860c317c6ed28ee84f42900642047fff5b859e5` |
+| `first-pass-captures/35885-securelist-esxi.json` | `218377347008de7b47f4af673cc9cfbe7da6cb667295fb2120a06a8ef1c77662` |
+| `first-pass-captures/35886-symantec-ai-retailer.json` | `7273df42a13d13631d09a74ebc66d285b3ace9f0ce0c3d8a75bfd79a5dde7bb0` |
+| `first-pass-captures/35887-groupib-darklunnen.json` | `540f3a7cb5cf2ee8578f7967253e55d28bd2ef39e17e010e811bf065f28bf611` |
+| `first-pass-captures/35888-rl-midnight-blizzard.json` | `d4415975c5f4a329127d73462fbb685e40dc25bcda95b6d55f1242c9383cf325` |
+| `first-pass-captures/35889-asec-snakekeylogger.json` | `55e747603006050bd1cb1ff2dc6dfef6d75c054225eb67742523be6692688ddd` |
 
 Private (gitignored; publisher content):
 
