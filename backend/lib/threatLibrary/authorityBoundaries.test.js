@@ -148,7 +148,7 @@ test('R31 and R32: a prose statement goes to review; a grounded model verdict do
 function plainPdfDocument(lines) {
   const items = lines.map((text, i) => ({ text, y: 780 - i * 14, x: 50, height: 11, fontName: 'F1', itemCount: 1, cells: [{ text, x: 50 }] }));
   const { blocks } = linesToBlocks(items, { pageNum: 1, startIdx: 1, bodyFonts: new Set(['F1']), bodyHeight: 11, tables: false });
-  return createCanonicalDocument({ title: 'Plain PDF', language: 'en', blocks, meta: { adapter: 'pdf', extractor: 'threat_library_pdf_v7' } });
+  return createCanonicalDocument({ title: 'Plain PDF', language: 'en', blocks, meta: { adapter: 'pdf', extractor: 'threat_library_pdf_v8' } });
 }
 
 const PDF_LINES = ['The operators of the campaign relied on a small set of servers.', 'The loader beacons to narrative-c2.net during installation.', 'Indicators of Compromise', 'evil-c2-one.net', 'evil-c2-two.net', 'Recommendations', 'Review outbound connections to storage.cloudvendor.net regularly.'];

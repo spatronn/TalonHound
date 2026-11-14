@@ -28,8 +28,14 @@ import { FILE_EXT_HINT, hasDelegatedDnsSuffix } from './observableTypeResolver.j
  * ("a.dll <md5> b.dll <md5> c.dll <md5>", a dense multi-column inventory the
  * table detector did not split) is an observable row with one pair per line,
  * instead of a narrative paragraph that can absorb an adjacent lead-in sentence.
+ * v8: a single-token observable cut mid-token by a narrow table cell re-joins.
+ * The cut is read from geometry (the head fragment reaches the column's right
+ * edge) and only applies when the join is hostname/URL-shaped, so wrapped words
+ * keep their space; a single-token fragment line that opens such a wrap (the
+ * first line of a hash or domain split over two or three lines) continues the
+ * table instead of ending it as a structural heading.
  */
-export const PDF_LAYOUT_VERSION = 'threat_library_pdf_v7';
+export const PDF_LAYOUT_VERSION = 'threat_library_pdf_v8';
 
 /** Fraction of page height (top/bottom) treated as printed header/footer band. */
 const PAGE_EDGE_FRACTION = 0.055;
@@ -262,19 +268,60 @@ function isSplitDigest(head, tail) {
   return !DIGEST_LENGTHS.has(head.length) && DIGEST_LENGTHS.has(head.length + tail.length);
 }
 
+/** Hostname (optionally URL) shape of a re-joined token, after refanging. */
+const JOINED_HOST_RE =
+  /^(?:(?:https?|wss?|ftp):\/\/)?((?:[a-z0-9_](?:[a-z0-9_-]*[a-z0-9_])?\.)+[a-z][a-z0-9-]{1,62})(?::\d{1,5})?(?:[/?#]\S*)?$/i;
+
+/** Host part of a hostname/URL-shaped token (refanged), or null. */
+function joinedHost(token) {
+  const m = JOINED_HOST_RE.exec(refangTextForExtraction(token));
+  return m ? m[1] : null;
+}
+
+/**
+ * True when a single token cut mid-label by the cell edge re-forms a hostname
+ * or URL. The head ends inside a label (a separator end is joined by the other
+ * rules) and the tail run starts with a label character. The cut is known
+ * either from geometry (the head filled the cell) or because the head's last
+ * label is not a delegated DNS suffix (`asin-winston.try` + `cloudflare[.]com`);
+ * either way the re-joined token must end in a delegated suffix.
+ * @param {string} head
+ * @param {string} tailRun the next fragment plus any single-token fragments after it
+ * @param {boolean} headFills
+ */
+function isCutHostToken(head, tailRun, headFills) {
+  if (!/[a-z0-9_-]$/i.test(head) || !/^[a-z0-9_]/i.test(tailRun)) return false;
+  const host = joinedHost(head + tailRun);
+  if (!host || !hasDelegatedDnsSuffix(host)) return false;
+  if (headFills) return true;
+  const headHost = refangTextForExtraction(head).replace(/^[a-z][a-z0-9+.-]*:\/\//i, '');
+  return /^[a-z0-9_.-]+$/i.test(headHost) && headHost.includes('.') && !hasDelegatedDnsSuffix(headHost);
+}
+
 /**
  * Join fragments of one table cell that wrapped across visual lines. A hex run
  * split in two (hash cells), or a URL/path cut at a separator, re-joins without
- * a space; ordinary wrapped prose gets a space.
- * @param {string[]} fragments
+ * a space; ordinary wrapped prose gets a space. A single token cut inside a
+ * hostname label re-joins when the result is a hostname/URL with a delegated
+ * suffix and the cut is evident: a fragment given as `{ text, fillsCell }`
+ * that reached the cell's right edge, or a head whose last label is no DNS
+ * suffix (`wwpeeya.ignores.wor` + `kers[.]dev`).
+ * @param {(string|{ text: string, fillsCell?: boolean })[]} fragments
  */
 export function joinWrappedCellFragments(fragments) {
+  const items = (fragments || [])
+    .map((raw) => ({
+      text: String((raw && typeof raw === 'object' ? raw.text : raw) || '').trim(),
+      fills: Boolean(raw && typeof raw === 'object' && raw.fillsCell)
+    }))
+    .filter((f) => f.text);
   let out = '';
-  for (const raw of fragments || []) {
-    const f = String(raw || '').trim();
-    if (!f) continue;
+  let prevFills = false;
+  for (let k = 0; k < items.length; k += 1) {
+    const f = items[k].text;
     if (!out) {
       out = f;
+      prevFills = items[k].fills;
       continue;
     }
     const outSingle = !/\s/.test(out);
@@ -286,9 +333,57 @@ export function joinWrappedCellFragments(fragments) {
     else if (fSingle && isSplitDigest(lastToken, f)) out += f;
     else if (outSingle && fSingle && /[/=&?_%.\-]$/.test(out)) out += f;
     else if (outSingle && fSingle && /^[/?&=.]/.test(f)) out += f;
+    else if (outSingle && fSingle && isCutHostToken(out, tailRun(items, k), prevFills)) out += f;
     else out += ` ${f}`;
+    prevFills = items[k].fills;
   }
   return out;
+}
+
+/** Fragment k plus the single-token fragments that directly follow it. */
+function tailRun(items, k) {
+  let run = '';
+  for (let j = k; j < items.length && !/\s/.test(items[j].text); j += 1) run += items[j].text;
+  return run;
+}
+
+/**
+ * True when a cell reaches its column's right edge (within about one and a
+ * half glyphs): the line broke because the cell had no room left.
+ * @param {PdfCell} cell
+ * @param {{ x1: number }} column
+ */
+function cellFillsColumn(cell, column) {
+  const text = String(cell?.text || '');
+  if (!column || !text) return false;
+  const glyph = (cell.x1 - cell.x0) / Math.max(text.length, 1);
+  return column.x1 - cell.x1 <= Math.max(2, 1.5 * glyph);
+}
+
+/**
+ * A single-cell line holding one token (no space) that fills an established
+ * column and is continued, at wrapped-line pitch, by an aligned cell of the
+ * same column on the next line: the first line of an observable the cell edge
+ * cut (a SHA-1 over three lines, a long subdomain). It belongs to the table
+ * even when it looks like a structural heading (short, non-body font).
+ * @param {PdfLine} line
+ * @param {PdfLine|undefined} next
+ * @param {{ x0: number, x1: number }[]} columns
+ */
+function isWrappedTokenHead(line, next, columns) {
+  const cells = line.cells || [];
+  if (columns.length < 2 || cells.length !== 1 || !next || next.pageEdge || next.repeated) return false;
+  const cell = cells[0];
+  if (!/^[A-Za-z0-9._\-[\]:/]+$/.test(cell.text) || !/[0-9._\-[]/.test(cell.text)) return false;
+  const col = columnForCell(columns, cell);
+  if (col == null || col === -1) return false;
+  // Cut by the cell edge, or broken at a separator the token goes on after.
+  if (!cellFillsColumn(cell, columns[col]) && !/[-._[/]$/.test(cell.text)) return false;
+  const gap = line.y - next.y;
+  if (!(gap > 0) || gap > ROW_GAP_FACTOR * Math.max(line.height, next.height, 1)) return false;
+  return (next.cells || []).some(
+    (c) => columnForCell(columns, c) === col && Math.abs(c.x0 - cell.x0) <= WRAP_ALIGN_TOLERANCE
+  );
 }
 
 /**
@@ -372,7 +467,8 @@ function growTableRegion(src, start, ctx) {
       const prev = members.length ? members[members.length - 1].line : null;
       const gap = prev ? prev.y - line.y : Infinity;
       const continues =
-        prev && columns.length >= 2 && columnForCell(columns, cells[0]) != null && gap <= ROW_GAP_FACTOR * Math.max(prev.height, line.height, 1);
+        (prev && columns.length >= 2 && columnForCell(columns, cells[0]) != null && gap <= ROW_GAP_FACTOR * Math.max(prev.height, line.height, 1)) ||
+        (prev && isWrappedTokenHead(line, src[i + 1], columns));
       if (!continues) break;
     }
     const assignment = [];
@@ -507,7 +603,7 @@ function regionToRows(region, pitch) {
     const fonts = new Map();
     for (const m of region.members.slice(cursor, cursor + span)) {
       m.line.cells.forEach((cell, k) => {
-        frags[colPos.get(m.assignment[k])].push(cell.text);
+        frags[colPos.get(m.assignment[k])].push({ text: cell.text, fillsCell: cellFillsColumn(cell, region.columns[m.assignment[k]]) });
         if (cell.fontName) fonts.set(cell.fontName, (fonts.get(cell.fontName) || 0) + cell.text.length);
       });
     }

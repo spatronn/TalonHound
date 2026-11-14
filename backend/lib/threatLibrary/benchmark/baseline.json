@@ -1,20 +1,20 @@
 {
   "versions": {
     "candidates": "tl-candidates-v67",
-    "zones": "tl-zones-v18",
+    "zones": "tl-zones-v19",
     "tables": "tl-table-v19",
     "type_resolver": "tl-type-resolver-v28",
     "html": "threat_library_html_v12",
-    "pdf": "threat_library_pdf_v7",
+    "pdf": "threat_library_pdf_v8",
     "quality": "tl-quality-v16",
     "metrics": "tl-benchmark-metrics-v2"
   },
   "aggregate": {
-    "cases": 107,
-    "cases_exact": 105,
+    "cases": 108,
+    "cases_exact": 106,
     "indicators": {
-      "expected": 1547,
-      "tp": 1545,
+      "expected": 1558,
+      "tp": 1556,
       "fp": 0,
       "fn": 2,
       "fn_not_extracted": 0,
@@ -28,7 +28,7 @@
     "candidate_extraction_recall": 0.9994,
     "context_only_accuracy": 1,
     "legitimate_exclusion_accuracy": 1,
-    "assertion_accuracy": 0.9677,
+    "assertion_accuracy": 0.9681,
     "section_accuracy": 1,
     "non_indicators_promoted": 0,
     "ai_dependent_entries": 15,
@@ -38,7 +38,7 @@
       "warning": 3,
       "info": 26,
       "cases_flagged": 3,
-      "exact_cases": 105,
+      "exact_cases": 106,
       "exact_cases_flagged": 3,
       "failing_cases": 2,
       "failing_cases_flagged": 0
@@ -2328,6 +2328,32 @@
       "sections_checked": 1,
       "assertions_correct": 16,
       "assertions_checked": 16,
+      "warning_codes": []
+    },
+    "pdf-wrapped-narrow-cells": {
+      "members": [
+        "domain:5ede4fc5ae051d7b1601142d283755e4.loophole.site",
+        "domain:alpha-node.ru",
+        "domain:asin-winston.trycloudflare.com",
+        "domain:beta-node.net",
+        "domain:cheese-metals-gourmet-talks.trycloudflare.com",
+        "domain:qzx7.tunnel-pad.workers.dev",
+        "domain:vk3.p4ad3742dd.workers.dev",
+        "ip:46.151.29.58",
+        "sha1:0ebf187cf4dd22b7a096727013022b3e66163982",
+        "sha1:304a4520bbe8d147ec853f5a95cd3c16b6fefe2b",
+        "sha1:8bd1571cef00dddd4e0a409cc61065d248c23341"
+      ],
+      "tp": 11,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 2,
+      "sections_checked": 2,
+      "assertions_correct": 11,
+      "assertions_checked": 11,
       "warning_codes": []
     },
     "layout/html_flat/table": {

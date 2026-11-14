@@ -102,8 +102,11 @@ import {
  * v18 (35831 cleanup): a vendor patch / advisory link list heading ("Patch
  * links", "Vendor advisories", "Security bulletins") is a reference section,
  * so its one-link list rows are context, not structured rows for review.
+ * v19 (PDF wrapped cells): a page number glued to a running title
+ * ("21GopherWhisper: …") is the same repeated chrome as "22 GopherWhisper: …",
+ * so it never becomes a section heading that re-opens an earlier IOC section.
  */
-export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v18';
+export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v19';
 
 /**
  * Pure filename/hash inventory whose row boundaries were lost before zoning
@@ -300,7 +303,9 @@ export function normalizeForRepetition(text) {
     .toLowerCase()
     .replace(/https?:\/\/\S+/gi, 'URL')
     .replace(/\bwww\.[a-z0-9.-]+\b/gi, 'HOST')
-    .replace(/^\d{1,3}\s+/, '')
+    // A page number glued to a running title ("21GopherWhisper: …", the kern
+    // space squeezed out) is the same chrome as "22 GopherWhisper: …".
+    .replace(/^\d{1,3}(?:\s+|(?=[a-z]{3}))/, '')
     .replace(/\b[a-z]{2,6}[-–—]\w+[-–—]\d{4}[-–—]\d+\b/gi, 'DOCID')
     .replace(/\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4}/g, 'DATE')
     .replace(/\d{1,2}:\d{2}(:\d{2})?/g, 'TIME')

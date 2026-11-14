@@ -1,0 +1,1192 @@
+{
+ "pages": [
+  {
+   "page": 1,
+   "pageHeight": 792,
+   "items": [
+    {
+     "str": "Our investigation revealed an actor targeting a governmental entity with a varied toolset of loaders,",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      58,
+      740
+     ],
+     "width": 392.184,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "injectors, and backdoors. The first part of the toolset consisted of several new tools that were used",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      58,
+      727.6
+     ],
+     "width": 391.185,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "together with a custom backdoor. Later we also uncovered a new injector capable of persisting through",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      58,
+      715.2
+     ],
+     "width": 409.194,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "a Windows service and a backdoor executed by that injector. By analyzing the command and control",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      58,
+      702.8
+     ],
+     "width": 399.681,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "communications obtained from attacker operated channels, we were able to gain more information about",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      58,
+      690.4
+     ],
+     "width": 416.187,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "the alignment, inner workings, and post-compromise activities of the group described in this paper.",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      58,
+      678
+     ],
+     "width": 391.662,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "The tables below list the files and the network infrastructure that we attribute to this activity.",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      58,
+      665.6
+     ],
+     "width": 362.16,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "Hashes are given as SHA-1 values; domains are defanged to avoid accidental resolution by readers.",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      58,
+      653.2
+     ],
+     "width": 400.185,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "IOCs",
+     "transform": [
+      14,
+      0,
+      0,
+      14,
+      58,
+      620
+     ],
+     "width": 32.676,
+     "height": 14,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "Files",
+     "transform": [
+      12,
+      0,
+      0,
+      12,
+      58,
+      596
+     ],
+     "width": 27.348,
+     "height": 12,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "SHA-1",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      64,
+      572
+     ],
+     "width": 26.505,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "Filename",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      185,
+      572
+     ],
+     "width": 37.008,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "Detection",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      290,
+      572
+     ],
+     "width": 38.016,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "Description",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      400,
+      572
+     ],
+     "width": 45.009,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "0EBF187CF4DD22B7A09",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      64,
+      546
+     ],
+     "width": 102.6,
+     "height": 9,
+     "fontName": "Courier"
+    },
+    {
+     "str": "6727013022B3E661639",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      64,
+      534.5
+     ],
+     "width": 102.6,
+     "height": 9,
+     "fontName": "Courier"
+    },
+    {
+     "str": "temp001.exe",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      185,
+      534.5
+     ],
+     "width": 59.4,
+     "height": 9,
+     "fontName": "Courier"
+    },
+    {
+     "str": "Win64/Agent.A0",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      290,
+      534.5
+     ],
+     "width": 65.034,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "Backdoor component.",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      400,
+      534.5
+     ],
+     "width": 87.543,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "82",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      64,
+      523
+     ],
+     "width": 10.8,
+     "height": 9,
+     "fontName": "Courier"
+    },
+    {
+     "str": "8BD1571CEF00DDDD4E0",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      64,
+      497
+     ],
+     "width": 102.6,
+     "height": 9,
+     "fontName": "Courier"
+    },
+    {
+     "str": "A409CC61065D248C233",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      64,
+      485.5
+     ],
+     "width": 102.6,
+     "height": 9,
+     "fontName": "Courier"
+    },
+    {
+     "str": "delltool.exe",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      185,
+      485.5
+     ],
+     "width": 64.8,
+     "height": 9,
+     "fontName": "Courier"
+    },
+    {
+     "str": "Win64/Agent.A1",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      290,
+      485.5
+     ],
+     "width": 65.034,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "Backdoor component.",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      400,
+      485.5
+     ],
+     "width": 87.543,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "41",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      64,
+      474
+     ],
+     "width": 10.8,
+     "height": 9,
+     "fontName": "Courier"
+    },
+    {
+     "str": "304A4520BBE8D147EC8",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      64,
+      448
+     ],
+     "width": 102.6,
+     "height": 9,
+     "fontName": "Courier"
+    },
+    {
+     "str": "53F5A95CD3C16B6FEFE",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      64,
+      436.5
+     ],
+     "width": 102.6,
+     "height": 9,
+     "fontName": "Courier"
+    },
+    {
+     "str": "whisper.dll",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      185,
+      436.5
+     ],
+     "width": 59.4,
+     "height": 9,
+     "fontName": "Courier"
+    },
+    {
+     "str": "Win64/Agent.A2",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      290,
+      436.5
+     ],
+     "width": 65.034,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "Backdoor component.",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      400,
+      436.5
+     ],
+     "width": 87.543,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "2B",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      64,
+      425
+     ],
+     "width": 10.8,
+     "height": 9,
+     "fontName": "Courier"
+    }
+   ]
+  },
+  {
+   "page": 2,
+   "pageHeight": 792,
+   "items": [
+    {
+     "str": "Network",
+     "transform": [
+      12,
+      0,
+      0,
+      12,
+      58,
+      740
+     ],
+     "width": 47.34,
+     "height": 12,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "IP",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      64,
+      716
+     ],
+     "width": 8.505,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "Domain",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      163,
+      716
+     ],
+     "width": 31.005,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "Hosting",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      290,
+      716
+     ],
+     "width": 30.51,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "First seen",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      370,
+      716
+     ],
+     "width": 39.51,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "Details",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      440,
+      716
+     ],
+     "width": 27.504,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "provider",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      290,
+      704.5
+     ],
+     "width": 32.508,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "N/A",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      64,
+      678.5
+     ],
+     "width": 15.003,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "qzx7.tunnel-pad.wor",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      163,
+      678.5
+     ],
+     "width": 102.6,
+     "height": 9,
+     "fontName": "Courier"
+    },
+    {
+     "str": "N/A",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      290,
+      678.5
+     ],
+     "width": 15.003,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "2025-12-30",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      370,
+      678.5
+     ],
+     "width": 46.026,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "Example C&C server.",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      440,
+      678.5
+     ],
+     "width": 86.517,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "kers[.]dev",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      163,
+      667
+     ],
+     "width": 54,
+     "height": 9,
+     "fontName": "Courier"
+    },
+    {
+     "str": "N/A",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      64,
+      641
+     ],
+     "width": 15.003,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "vk3.p4ad3742dd.work",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      163,
+      641
+     ],
+     "width": 102.6,
+     "height": 9,
+     "fontName": "Courier"
+    },
+    {
+     "str": "N/A",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      290,
+      641
+     ],
+     "width": 15.003,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "2025-12-30",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      370,
+      641
+     ],
+     "width": 46.026,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "Example C&C server.",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      440,
+      641
+     ],
+     "width": 86.517,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "ers[.]dev",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      163,
+      629.5
+     ],
+     "width": 48.6,
+     "height": 9,
+     "fontName": "Courier"
+    },
+    {
+     "str": "cheese-metals-",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      163,
+      603.5
+     ],
+     "width": 75.6,
+     "height": 9,
+     "fontName": "Courier"
+    },
+    {
+     "str": "N/A",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      64,
+      592
+     ],
+     "width": 15.003,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "gourmet-talks.",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      163,
+      592
+     ],
+     "width": 75.6,
+     "height": 9,
+     "fontName": "Courier"
+    },
+    {
+     "str": "N/A",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      290,
+      592
+     ],
+     "width": 15.003,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "2025-12-30",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      370,
+      592
+     ],
+     "width": 46.026,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "Example C&C server.",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      440,
+      592
+     ],
+     "width": 86.517,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "trycloudflare[.]com",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      163,
+      580.5
+     ],
+     "width": 102.6,
+     "height": 9,
+     "fontName": "Courier"
+    },
+    {
+     "str": "N/A",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      64,
+      554.5
+     ],
+     "width": 15.003,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "asin-winston.try",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      163,
+      554.5
+     ],
+     "width": 86.4,
+     "height": 9,
+     "fontName": "Courier"
+    },
+    {
+     "str": "N/A",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      290,
+      554.5
+     ],
+     "width": 15.003,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "2025-12-30",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      370,
+      554.5
+     ],
+     "width": 46.026,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "Example C&C server.",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      440,
+      554.5
+     ],
+     "width": 86.517,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "cloudflare[.]com",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      163,
+      543
+     ],
+     "width": 86.4,
+     "height": 9,
+     "fontName": "Courier"
+    },
+    {
+     "str": "5ede4fc5ae051d7b160",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      163,
+      517
+     ],
+     "width": 102.6,
+     "height": 9,
+     "fontName": "Courier"
+    },
+    {
+     "str": "N/A",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      64,
+      505.5
+     ],
+     "width": 15.003,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "1142d283755e4.looph",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      163,
+      505.5
+     ],
+     "width": 102.6,
+     "height": 9,
+     "fontName": "Courier"
+    },
+    {
+     "str": "N/A",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      290,
+      505.5
+     ],
+     "width": 15.003,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "2025-12-30",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      370,
+      505.5
+     ],
+     "width": 46.026,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "Example C&C server.",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      440,
+      505.5
+     ],
+     "width": 86.517,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "ole[.]site",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      163,
+      494
+     ],
+     "width": 54,
+     "height": 9,
+     "fontName": "Courier"
+    },
+    {
+     "str": "N/A",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      64,
+      468
+     ],
+     "width": 15.003,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "alpha-node[.]ru",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      163,
+      468
+     ],
+     "width": 81,
+     "height": 9,
+     "fontName": "Courier"
+    },
+    {
+     "str": "N/A",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      290,
+      468
+     ],
+     "width": 15.003,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "2025-12-30",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      370,
+      468
+     ],
+     "width": 46.026,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "Example C&C server.",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      440,
+      468
+     ],
+     "width": 86.517,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "beta-node[.]net",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      163,
+      456.5
+     ],
+     "width": 81,
+     "height": 9,
+     "fontName": "Courier"
+    },
+    {
+     "str": "46.151.29[.]58",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      64,
+      430.5
+     ],
+     "width": 57.546,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "N/A",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      163,
+      430.5
+     ],
+     "width": 15.003,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "Example Hosting",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      290,
+      430.5
+     ],
+     "width": 68.022,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "2025-03-24",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      370,
+      430.5
+     ],
+     "width": 46.026,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "Example C&C server.",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      440,
+      430.5
+     ],
+     "width": 86.517,
+     "height": 9,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "MITRE ATT&CK techniques",
+     "transform": [
+      14,
+      0,
+      0,
+      14,
+      58,
+      394.5
+     ],
+     "width": 182.784,
+     "height": 14,
+     "fontName": "Helvetica"
+    },
+    {
+     "str": "The operators exfiltrate archives through file.io and host relays on workers.dev subdomains.",
+     "transform": [
+      9,
+      0,
+      0,
+      9,
+      58,
+      370.5
+     ],
+     "width": 365.652,
+     "height": 9,
+     "fontName": "Helvetica"
+    }
+   ]
+  }
+ ]
+}
