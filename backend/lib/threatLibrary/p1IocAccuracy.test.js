@@ -175,16 +175,51 @@ test('D: placeholder URLs are not Indicators and are not truncated into ones', (
     { id: 'row', type: 'list', text: 'hxxps://securedoc.example.workers.dev/s?id=<linkid:8>' }
   ]);
   assertMember(result, 'url', 'http://157.20.241.16:8080/jup.sh');
-  const slot = extract([
-    { id: 'h1', type: 'heading', level: 2, text: 'C2 Beaconing' },
-    { id: 'p', type: 'paragraph', text: 'hxxps://kkwinapp[.]oss-cn-hongkong[.]aliyuncs[.]com/dow/upload?log=<data>' }
-  ]);
-  assertMember(slot, 'url', 'https://kkwinapp.oss-cn-hongkong.aliyuncs.com/dow/upload?log=');
   const urls = result.candidates.filter((c) => c.candidate_type === 'url').map((c) => c.normalized_value);
   for (const value of urls) {
     assert.equal(/jup_start_|linkid|%3C/i.test(value), false, value);
   }
   assert.equal(urls.includes('http://157.20.241.16:8080/ob/cronhit?h=jup_start_'), false);
+
+  // Matching semantics of a letter/hyphen query slot: the publisher documents
+  // the path and leaves the runtime parameter unfilled. The concrete prefix is
+  // the Indicator. A colon/digit placeholder, a mid-token placeholder, or a
+  // second placeholder after '&' is a template and is not shortened into one.
+  const slot = extract([
+    { id: 'h1', type: 'heading', level: 2, text: 'C2 Beaconing' },
+    { id: 'p', type: 'paragraph', text: 'hxxps://kkwinapp[.]oss-cn-hongkong[.]aliyuncs[.]com/dow/upload?log=<data>' }
+  ]);
+  assertMember(slot, 'url', 'https://kkwinapp.oss-cn-hongkong.aliyuncs.com/dow/upload?log=');
+  const formatUrl = extract([
+    { id: 'h1', type: 'heading', level: 2, text: 'Indicators' },
+    { id: 'row', type: 'list', text: 'hxxps://unityprogressall[.]org/imagecontent/getimgcontent.php?id=<target-email-address>' }
+  ]);
+  assertMember(formatUrl, 'url', 'https://unityprogressall.org/imagecontent/getimgcontent.php?id=');
+
+  for (const raw of [
+    'hxxps://host.example/path?id=<linkid:8>',
+    'hxxps://host.example/path?id=%3Clinkid:8%3E',
+    'hxxp://157.20.241[.]16:8080/ob/cronhit?h=jup_start_<rig>&persist=<method>',
+    'hxxps://host.example/u/<user>/a.exe',
+    'hxxps://host.example/p/[VictimGUID]/b.exe',
+    'hxxps://host.example/dow/upload?log=<data>&extra=<more>'
+  ]) {
+    const r = extract([
+      { id: 'h1', type: 'heading', level: 2, text: 'Indicators' },
+      { id: 'row', type: 'list', text: raw }
+    ]);
+    const members = r.candidates.filter((c) => isReportIndicatorMember(c) && c.candidate_type === 'url');
+    assert.equal(members.length, 0, raw);
+  }
+
+  // Limitation: any ?name=<IDENT> with only letters/hyphens/underscores keeps
+  // the published prefix. Prefer colon/digit placeholders when the publisher
+  // means an unfilled opaque id that must never match traffic.
+  const letterSlot = extract([
+    { id: 'h1', type: 'heading', level: 2, text: 'Indicators' },
+    { id: 'row', type: 'list', text: 'hxxps://host.example/path?id=<Victim_GUID>' }
+  ]);
+  assertMember(letterSlot, 'url', 'https://host.example/path?id=');
 });
 
 test('E: refresh keeps an applied model label when the quote still grounds, and drops it when the quote is gone', () => {

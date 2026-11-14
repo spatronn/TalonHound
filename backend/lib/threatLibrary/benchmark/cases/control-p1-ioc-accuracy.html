@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head><title>P1 IOC accuracy control: declaration, comment, signature, templates</title></head>
+<body>
+<article>
+<h1>P1 IOC accuracy control: declaration, comment, signature, templates</h1>
+<p>The campaign stages a loader, then beacons installation telemetry. A hunting note names decoy-before.vendor.net before the declared list. The vendor blog is published at research-notes.vendor.net.</p>
+
+<h2>C2 and infrastructure</h2>
+<table>
+  <thead><tr><th>Indicator</th><th>Role</th></tr></thead>
+  <tbody>
+    <tr><td>db-connectors[.]vercel[.]app</td><td>Stage one loader</td></tr>
+    <tr><td>138.226.247[.]154</td><td>C2</td></tr>
+  </tbody>
+</table>
+
+<h2>Hunting queries</h2>
+<pre>DeviceProcessEvents | where RemoteUrl has "telemetry.vendor-cloud.net"</pre>
+<p>Network, for the observed command hosts. These domains and addresses are indicators, not destinations to visit: db-connectors[.]vercel[.]app, chainmanamgentagency[.]info, green-horse-42739[.]zap[.]cloud, blue-eagle-26751[.]zap[.]cloud, 138.226.247[.]154.</p>
+<p>These domains are not indicators: not-an-indicator.vendor.net.</p>
+
+<h2>Indicators</h2>
+<p>Infection traffic for the infostealer:</p>
+<ul>
+  <li>hxxp[:]//45.150.32[.]130/37339606cba4522a?force=1</li>
+  <li>hxxp[:]//171.22.131[.]24:8133/api/t &lt;-- HTTP POST request, generated 4 times before the malware was blocked</li>
+  <li>hxxp://157.20.241[.]16:8080/jup.sh</li>
+  <li>hxxp://157.20.241[.]16:8080/ob/cronhit?h=jup_start_&lt;rig&gt;&amp;persist=&lt;method&gt;</li>
+  <li>hxxps://securedoc.example.workers.dev/?id=&lt;linkid:8&gt;</li>
+  <li>hxxps://securedoc.example.workers.dev/h?id=%3Clinkid:8%3E</li>
+  <li>hxxps://kkwinapp[.]oss-cn-hongkong[.]aliyuncs[.]com/dow/upload?log=&lt;data&gt;</li>
+  <li>hxxps://unityprogressall[.]org/imagecontent/getimgcontent.php?id=&lt;target-email-address&gt;</li>
+  <li>quill-kraee-um2gf[.]pro</li>
+  <li>brahma2023[@]onionmail[.]org</li>
+</ul>
+<p>--</p>
+<p>Bradley Duncan</p>
+<p>brad [at] malware-traffic-analysis.net</p>
+<p>Keywords:</p>
+<p>2 comment(s)</p>
+<p>Spoofed sender impersonating the brand: hello[@]boots[.]com</p>
+</article>
+</body>
+</html>

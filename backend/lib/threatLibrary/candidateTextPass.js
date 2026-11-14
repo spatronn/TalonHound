@@ -72,11 +72,13 @@ export function readDocumentText(blocks, acc, ctx) {
       // ("…/jup_start_<rig>&persist=<method>", "…?id=<linkid:8>"): the
       // shortened prefix is not a URL anyone requested. The whole template
       // stays one span so its host is not read as a separate observable.
-      // A single letter-only slot after "=" ("…/upload?log=<data>") is the
-      // published URL up to that parameter; the prefix stays.
+      // A single letter/hyphen slot after "=" ("…/upload?log=<data>",
+      // "…?id=<target-email-address>") is the published URL up to that
+      // parameter; the prefix stays. Colon or digit slots ("<linkid:8>") and
+      // a second placeholder after "&" stay templates.
       const templateEnd = templateUrlSpanEnd(text, m.index + url.length);
       const templateTail = templateEnd > m.index + url.length ? text.slice(m.index + url.length, templateEnd) : '';
-      const simpleQuerySlot = /=\s*$/.test(url) && /^<?\s*[A-Za-z_]{1,40}\s*>?$/.test(templateTail.trim()) && !/&/.test(templateTail);
+      const simpleQuerySlot = /=\s*$/.test(url) && /^<?\s*[A-Za-z_][\w-]{0,48}\s*>?$/.test(templateTail.trim()) && !/&/.test(templateTail);
       if (templateTail && !simpleQuerySlot) {
         spans.push([m.index, templateEnd]);
         noteRejectedToken(text.slice(m.index, templateEnd), 'url', block, 'template_placeholder');

@@ -10,11 +10,11 @@
     "metrics": "tl-benchmark-metrics-v2"
   },
   "aggregate": {
-    "cases": 110,
-    "cases_exact": 108,
+    "cases": 111,
+    "cases_exact": 109,
     "indicators": {
-      "expected": 1590,
-      "tp": 1588,
+      "expected": 1601,
+      "tp": 1599,
       "fp": 0,
       "fn": 2,
       "fn_not_extracted": 0,
@@ -22,13 +22,13 @@
       "fn_not_member": 2,
       "fn_needs_review": 2,
       "precision": 1,
-      "recall": 0.9987,
-      "f1": 0.9993
+      "recall": 0.9988,
+      "f1": 0.9994
     },
     "candidate_extraction_recall": 0.9994,
     "context_only_accuracy": 1,
     "legitimate_exclusion_accuracy": 1,
-    "assertion_accuracy": 0.9691,
+    "assertion_accuracy": 0.9695,
     "section_accuracy": 1,
     "non_indicators_promoted": 0,
     "ai_dependent_entries": 15,
@@ -38,7 +38,7 @@
       "warning": 3,
       "info": 26,
       "cases_flagged": 3,
-      "exact_cases": 108,
+      "exact_cases": 109,
       "exact_cases_flagged": 3,
       "failing_cases": 2,
       "failing_cases_flagged": 0
@@ -268,6 +268,32 @@
       "sections_checked": 2,
       "assertions_correct": 6,
       "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "control-p1-ioc-accuracy": {
+      "members": [
+        "domain:blue-eagle-26751.zap.cloud",
+        "domain:chainmanamgentagency.info",
+        "domain:db-connectors.vercel.app",
+        "domain:green-horse-42739.zap.cloud",
+        "domain:quill-kraee-um2gf.pro",
+        "ip:138.226.247.154",
+        "url:http://157.20.241.16:8080/jup.sh",
+        "url:http://171.22.131.24:8133/api/t",
+        "url:http://45.150.32.130/37339606cba4522a?force=1",
+        "url:https://kkwinapp.oss-cn-hongkong.aliyuncs.com/dow/upload?log=",
+        "url:https://unityprogressall.org/imagecontent/getimgcontent.php?id="
+      ],
+      "tp": 11,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 11,
+      "assertions_checked": 11,
       "warning_codes": []
     },
     "control-paren-before-version-list": {
