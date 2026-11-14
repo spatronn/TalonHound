@@ -67,7 +67,7 @@ test('contract versions', () => {
   assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v13');
   assert.equal(PDF_LAYOUT_VERSION, 'threat_library_pdf_v9');
   assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v17');
-  assert.equal(PUBLICATION_DATE_EXTRACTOR_VERSION, 'tl-published-at-v6');
+  assert.equal(PUBLICATION_DATE_EXTRACTOR_VERSION, 'tl-published-at-v7');
   assert.ok(CRITICAL_QUALITY_CODES.includes('ioc_section_region_dropped'));
 });
 
@@ -226,6 +226,18 @@ test('FN-2: title from the cover page, publication date from the cover dateline'
   const d = extractDocumentPublicationDate(document, { sourceType: 'pdf' });
   assert.equal(d.published_date, '2026-11-13');
   assert.equal(d.evidence.signal, 'cover_dateline');
+});
+
+test('FN-2: a PDF fetched from a URL (source_type url) reads the same cover dateline', () => {
+  const { document } = ic3Document();
+  for (const sourceType of ['url', 'pdf']) {
+    const d = extractDocumentPublicationDate(document, { sourceType, sourceUrl: IC3_URL });
+    assert.equal(d.published_date, '2026-11-13', sourceType);
+    assert.equal(d.evidence.signal, 'cover_dateline', sourceType);
+  }
+  // An HTML document never takes the PDF-only dateline rule.
+  const html = { ...document, meta: { ...document.meta, adapter: 'generic_html' } };
+  assert.equal(extractDocumentPublicationDate(html, { sourceType: 'url', sourceUrl: IC3_URL }).evidence?.signal === 'cover_dateline', false);
 });
 
 test('FN-2: a date repeated as a running header on other pages is not a cover dateline', () => {
