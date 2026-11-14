@@ -84,7 +84,7 @@ test('contract versions', () => {
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v19');
   assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v16');
   assert.equal(EVIDENCE_INTEGRITY_VERSION, 'tl-evidence-integrity-v3');
-  assert.equal(IOC_SOURCE_SCOPE_VERSION, 'tl-ioc-source-scope-v8');
+  assert.equal(IOC_SOURCE_SCOPE_VERSION, 'tl-ioc-source-scope-v9');
 });
 
 // --- RC-1 -----------------------------------------------------------------------

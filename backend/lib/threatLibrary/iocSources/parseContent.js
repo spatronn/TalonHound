@@ -5,6 +5,8 @@
  */
 
 import { extractCandidatesFromDocument } from '../candidateExtraction.js';
+import { buildCandidateEvidenceRecord } from '../evidencePolicy.js';
+import { isReportIndicatorMember } from '../indicatorMembership.js';
 import { htmlToCanonicalDocument, plainTextToCanonicalDocument } from '../urlIngest.js';
 import { guessTypeFromUrl } from './sourceType.js';
 import {
@@ -128,6 +130,10 @@ export function candidatesFromDocument(document, meta = {}) {
   const out = [];
   for (const c of Array.isArray(list) ? list : []) {
     if (!c || c.is_ioc === false) continue;
+    // A full report (a white paper PDF) is not an IOC pack: only the values its
+    // own publisher-authoritative Indicator scope asserts become linked
+    // candidates — the same deterministic membership as an original document.
+    if (meta.reportIndicatorScope && !isReportIndicatorMember({ ...c, evidence: buildCandidateEvidenceRecord(c) })) continue;
     const type = String(c.candidate_type || '').toLowerCase();
     if (!type || type === 'cve' || type === 'attack_technique') continue;
     // Linked packs are treated as source-scoped authoritative lists (not original MODE A).
@@ -255,9 +261,18 @@ export async function parseIocSourceContent(input) {
       return { ok: false, code: 'unsupported_format', format, message: 'PDF parsing unavailable', candidates: [], warnings };
     }
     try {
-      document = await input.pdfToDocument(input.buffer || Buffer.from(input.body || '', 'utf8'), {
-        sourceUrl: input.url || null
+      // pdfIngest.pdfToCanonicalDocument returns { document, requiresOcr, … },
+      // not the canonical document itself. Reading `.blocks` off the wrapper
+      // made every linked PDF parse "ok" with zero candidates.
+      const produced = await input.pdfToDocument(input.buffer || Buffer.from(input.body || '', 'utf8'), {
+        sourceUrl: input.url || null,
+        fileName: input.path || null
       });
+      const pdf = Array.isArray(produced?.blocks) ? { document: produced } : produced || {};
+      if (pdf.requiresOcr) {
+        return { ok: false, code: 'pdf_requires_ocr', format, message: 'The PDF has no extractable text (OCR required)', candidates: [], warnings };
+      }
+      document = Array.isArray(pdf.document?.blocks) && pdf.document.blocks.length ? pdf.document : null;
     } catch (err) {
       return {
         ok: false,
@@ -368,7 +383,8 @@ export async function parseIocSourceContent(input) {
 
   const candidates = candidatesFromDocument(extractDoc, {
     sourcePublicId: input.sourcePublicId,
-    filePath: input.path
+    filePath: input.path,
+    reportIndicatorScope: format === 'pdf'
   }).filter((c) => !isPublisherReferenceCandidate(c, input.reportScope || {}));
 
   return {

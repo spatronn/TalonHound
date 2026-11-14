@@ -11,7 +11,8 @@
 import { pdfToCanonicalDocument, THREAT_LIBRARY_PDF_EXTRACTOR_VERSION } from './pdfIngest.js';
 import { refangObservable } from './defang.js';
 import { reextractStoredHtmlDocument } from './urlIngest.js';
-import { CURRENT_HTML_EXTRACTOR_VERSIONS, titleMeta } from './extract/extractHtml.js';
+import { CURRENT_HTML_EXTRACTOR_VERSIONS, THREAT_LIBRARY_HTML_FALLBACK_EXTRACTOR_VERSION, titleMeta } from './extract/extractHtml.js';
+import { HTML_BLOCKS_VERSION } from './extract/htmlBlocks.js';
 import { selectHtmlTitle } from './extract/titleSelection.js';
 import {
   extractCandidatesWithDiagnostics,
@@ -59,7 +60,12 @@ export function isDocumentContractCurrent(report, doc) {
     return doc.meta?.extractor === THREAT_LIBRARY_PDF_EXTRACTOR_VERSION;
   }
   if (report?.source_type === 'url') {
-    return CURRENT_HTML_EXTRACTOR_VERSIONS.includes(String(doc.meta?.extractor || ''));
+    const extractor = String(doc.meta?.extractor || '');
+    if (!CURRENT_HTML_EXTRACTOR_VERSIONS.includes(extractor)) return false;
+    // The structured fallback reads blocks with htmlBlocks: a block-parser
+    // change makes its documents stale even when the fallback id did not move.
+    if (extractor === THREAT_LIBRARY_HTML_FALLBACK_EXTRACTOR_VERSION) return doc.meta?.html_blocks === HTML_BLOCKS_VERSION;
+    return true;
   }
   return true;
 }

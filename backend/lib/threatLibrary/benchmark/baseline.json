@@ -10,11 +10,11 @@
     "metrics": "tl-benchmark-metrics-v2"
   },
   "aggregate": {
-    "cases": 106,
-    "cases_exact": 104,
+    "cases": 107,
+    "cases_exact": 105,
     "indicators": {
-      "expected": 1543,
-      "tp": 1541,
+      "expected": 1547,
+      "tp": 1545,
       "fp": 0,
       "fn": 2,
       "fn_not_extracted": 0,
@@ -28,7 +28,7 @@
     "candidate_extraction_recall": 0.9994,
     "context_only_accuracy": 1,
     "legitimate_exclusion_accuracy": 1,
-    "assertion_accuracy": 0.9676,
+    "assertion_accuracy": 0.9677,
     "section_accuracy": 1,
     "non_indicators_promoted": 0,
     "ai_dependent_entries": 15,
@@ -38,7 +38,7 @@
       "warning": 3,
       "info": 26,
       "cases_flagged": 3,
-      "exact_cases": 104,
+      "exact_cases": 105,
       "exact_cases_flagged": 3,
       "failing_cases": 2,
       "failing_cases_flagged": 0
@@ -398,6 +398,25 @@
       "warning_codes": [
         "authoritative_table_rows_demoted"
       ]
+    },
+    "control-streaming-ssr-fallback-root": {
+      "members": [
+        "domain:lookalike-signin.example",
+        "ip:198.51.100.10",
+        "ip:203.0.113.77",
+        "url:https://198.51.100.10/s"
+      ],
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 1,
+      "sections_checked": 1,
+      "assertions_correct": 4,
+      "assertions_checked": 4,
+      "warning_codes": []
     },
     "control-streaming-ssr-ioc-table": {
       "members": [

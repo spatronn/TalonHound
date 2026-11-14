@@ -22,6 +22,7 @@ import {
   extractHtmlLanguage,
   findElement,
   findElements,
+  HTML_BLOCKS_VERSION,
   parseHtml,
   summarizeObservableShapes,
   textOf
@@ -47,7 +48,13 @@ import { selectHtmlTitle } from './titleSelection.js';
 // v12: React streaming SSR segments (`$RS` / `$RC`) are put back at their
 // placeholders before blocks are read (htmlBlocks v12).
 export const THREAT_LIBRARY_HTML_EXTRACTOR_VERSION = 'threat_library_html_v12';
-export const THREAT_LIBRARY_HTML_FALLBACK_EXTRACTOR_VERSION = 'threat_library_html_fallback_v4';
+// Structured fallback v5: the fallback reads blocks with htmlBlocks too, but its
+// id stayed at v4 through htmlBlocks v7–v12, so fallback documents never went
+// stale and Refresh never re-read them (35888: React streaming SSR rows). From
+// v5 a fallback document also records the htmlBlocks version it was read with
+// (meta.html_blocks) and is current only while that matches HTML_BLOCKS_VERSION
+// (extractionStages.isDocumentContractCurrent).
+export const THREAT_LIBRARY_HTML_FALLBACK_EXTRACTOR_VERSION = 'threat_library_html_fallback_v5';
 
 /** Every extractor id a stored URL-sourced canonical document may carry and still be current. */
 export const CURRENT_HTML_EXTRACTOR_VERSIONS = Object.freeze([
@@ -286,6 +293,7 @@ export function extractStructuredFallbackDocument(html, meta = {}) {
     meta: {
       source_url: meta.url || null,
       extractor: THREAT_LIBRARY_HTML_FALLBACK_EXTRACTOR_VERSION,
+      html_blocks: HTML_BLOCKS_VERSION,
       adapter: 'structured_fallback',
       source_accounting: buildSourceAccounting(dom, { blocks: bestBlocks, dropped: bestDropped, kind: 'structured_fallback' }),
       ...titleMeta(selection)

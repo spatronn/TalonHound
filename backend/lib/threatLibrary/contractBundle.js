@@ -11,7 +11,7 @@ import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtracti
 import { THREAT_LIBRARY_DOCUMENT_ZONES_VERSION } from './documentZones.js';
 import { TABLE_SEMANTICS_VERSION } from './tableSemantics.js';
 import { OBSERVABLE_TYPE_RESOLVER_VERSION } from './observableTypeResolver.js';
-import { THREAT_LIBRARY_HTML_EXTRACTOR_VERSION } from './extract/extractHtml.js';
+import { THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, THREAT_LIBRARY_HTML_FALLBACK_EXTRACTOR_VERSION } from './extract/extractHtml.js';
 import { PDF_LAYOUT_VERSION } from './pdfLayout.js';
 import { EXTRACTION_QUALITY_VERSION } from './extractionQuality.js';
 import { SECTION_TREE_VERSION, SECTION_TREE_SCOPE_ENGINE_VERSION } from './sectionTree/version.js';
@@ -29,6 +29,7 @@ export function extractionContractBundle() {
     tables: TABLE_SEMANTICS_VERSION,
     type_resolver: OBSERVABLE_TYPE_RESOLVER_VERSION,
     html: THREAT_LIBRARY_HTML_EXTRACTOR_VERSION,
+    html_fallback: THREAT_LIBRARY_HTML_FALLBACK_EXTRACTOR_VERSION,
     pdf: PDF_LAYOUT_VERSION,
     section_tree: SECTION_TREE_VERSION,
     scope_engine: SECTION_TREE_SCOPE_ENGINE_VERSION,

@@ -1,0 +1,31 @@
+{
+  "id": "control-streaming-ssr-fallback-root",
+  "title": "Control: React SSR segments streamed into an IOC table under a content-root (no article/main) page stay in their IOC section",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": ["control", "html_extractor", "structured_fallback", "streaming_ssr", "mode_a"],
+  "source": {
+    "kind": "html_file",
+    "path": "control-streaming-ssr-fallback-root.html",
+    "url": "https://research.example/blog/streamed-fallback-root/"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed from the 35888 refresh follow-up (the stored document was a structured_fallback read whose id threat_library_html_fallback_v4 never moved through htmlBlocks v7-v12, so Refresh never rebuilt it and the streamed E-table rows stayed missing)",
+      "verified_by": "construction",
+      "verified_at": "2026-11-14"
+    },
+    "indicators": [
+      { "type": "url", "value": "https://198.51.100.10/s", "assertion": "explicit" },
+      { "type": "ip", "value": "198.51.100.10", "assertion": "explicit" },
+      { "type": "domain", "value": "lookalike-signin.example", "assertion": "explicit" },
+      { "type": "ip", "value": "203.0.113.77", "assertion": "explicit" }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "sections": [
+      { "heading": "E. Network indicators", "expected": "authoritative" }
+    ]
+  }
+}
