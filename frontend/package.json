@@ -20,7 +20,7 @@
     "test:threat-classification": "node --test src/lib/threatClassificationOrder.test.js src/lib/classificationSummary.test.js",
     "test:threat-actors": "node --test src/lib/threatActorManagerList.test.js src/lib/threatActorTableDisplay.test.js",
     "test:ioc-search": "node --test src/lib/iocSearchDslClient.test.js src/lib/actionCenter.test.js src/lib/deepSearch.test.js",
-    "test:file-artifacts": "node --test src/lib/fileArtifactDetailRedirect.test.js src/lib/intelligenceTabNoSourceEvidence.test.js",
+    "test:file-artifacts": "node --test src/lib/fileArtifactDetailRedirect.test.js src/lib/intelligenceTabNoSourceEvidence.test.js src/lib/knownHashRows.test.js",
     "test:virustotal": "node --test src/lib/virustotalGuiLink.test.js src/lib/virustotalWebAnalysis.test.js",
     "test:password-change": "node --test src/lib/passwordChangeGate.test.js",
     "test:audit-logs": "node --test src/lib/auditLogsView.test.js src/lib/auditThreatLibraryDetail.test.js",

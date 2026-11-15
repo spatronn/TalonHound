@@ -325,6 +325,174 @@ test('T9/T11 canonical merge keeps every source link and both hashes resolve tog
   assert.equal(shaStatus.rows[0].status, 'active');
 });
 
+test('VT enrichment across separate SHA1/SHA256 artifacts attaches unbound MD5 (prod regression)', opts, async () => {
+  // Production shape for 5474b5ea-...: SHA256 artifact from MalwareBazaar, SHA1 artifact
+  // from OTX, then VirusTotal enrichment of the SHA1 returns md5|sha1|sha256. The MD5 has
+  // no IOC row. Pre-fix dual-write merged the artifacts but dropped the unbound MD5.
+  const mb = await feed('mb-vt-md5', `MalwareBazaarVT${TOKEN}`);
+  const otx = await feed('otx-vt-md5', `AlienVaultVT${TOKEN}`);
+  const md5Value = md5();
+  const sha1Value = sha1();
+  const shaValue = sha256();
+
+  const shaIoc = await insertIoc({ type: 'sha256', value: shaValue, sourceName: `MalwareBazaarVT:${TOKEN}` });
+  await membership(shaIoc, mb);
+  await writeHash(shaIoc, { sourceName: `MalwareBazaarVT:${TOKEN}` });
+
+  const sha1Ioc = await insertIoc({ type: 'sha1', value: sha1Value, sourceName: `AlienVaultVT:${TOKEN}` });
+  await membership(sha1Ioc, otx);
+  await writeHash(sha1Ioc, { sourceName: `AlienVaultVT:${TOKEN}` });
+
+  const beforeArts = await pool.query(
+    `SELECT COUNT(DISTINCT CASE WHEN a.status = 'merged' THEN a.merged_into_artifact_id ELSE l.artifact_id END)::int AS n
+     FROM file_artifact_ioc_links l
+     JOIN file_artifacts a ON a.id = l.artifact_id
+     WHERE l.ioc_item_id = ANY($1::bigint[])`,
+    [[shaIoc.id, sha1Ioc.id]]
+  );
+  assert.equal(beforeArts.rows[0].n, 2, 'precondition: two separate artifacts');
+
+  const memBefore = await pool.query(
+    `SELECT id, ioc_item_id, status FROM ioc_feed_memberships
+     WHERE ioc_item_id = ANY($1::bigint[]) ORDER BY ioc_item_id`,
+    [[shaIoc.id, sha1Ioc.id]]
+  );
+
+  // T1/T2/T5/T7/T9: enrich SHA1 with complete VT hash set; MD5 is unbound (no IOC).
+  await writeHash(sha1Ioc, {
+    sourceName: 'VirusTotal',
+    note: `md5=${md5Value} | sha1=${sha1Value} | sha256=${shaValue}`,
+    observationType: 'enrichment_derived',
+    relationMethod: 'enrichment_result'
+  });
+
+  const arts = await pool.query(
+    `SELECT COUNT(DISTINCT CASE WHEN a.status = 'merged' THEN a.merged_into_artifact_id ELSE l.artifact_id END)::int AS n
+     FROM file_artifact_ioc_links l
+     JOIN file_artifacts a ON a.id = l.artifact_id
+     WHERE l.ioc_item_id = ANY($1::bigint[])`,
+    [[shaIoc.id, sha1Ioc.id]]
+  );
+  assert.equal(arts.rows[0].n, 1, 'artifacts merge into one canonical artifact');
+
+  const artifactId = (await pool.query(
+    `SELECT COALESCE(a.merged_into_artifact_id, l.artifact_id) AS artifact_id
+     FROM file_artifact_ioc_links l
+     JOIN file_artifacts a ON a.id = l.artifact_id
+     WHERE l.ioc_item_id = $1`,
+    [shaIoc.id]
+  )).rows[0].artifact_id;
+  created.artifactIds.push(artifactId);
+
+  const known = await pool.query(
+    `SELECT hash_type, normalized_hash_value, is_primary
+     FROM file_artifact_hashes WHERE artifact_id = $1::uuid
+     ORDER BY hash_type`,
+    [artifactId]
+  );
+  const byType = Object.fromEntries(known.rows.map((r) => [r.hash_type, r.normalized_hash_value]));
+  assert.equal(byType.md5, md5Value, 'T1/T2: unbound VT MD5 is materialized on the artifact');
+  assert.equal(byType.sha1, sha1Value);
+  assert.equal(byType.sha256, shaValue);
+  assert.equal(known.rows.length, 3);
+
+  // T3-style reuse: a later MD5 IOC for the same value links to the existing identity.
+  const md5Ioc = await insertIoc({ type: 'md5', value: md5Value, sourceName: `ThreatFoxVT:${TOKEN}` });
+  await writeHash(md5Ioc, {
+    sourceName: 'VirusTotal',
+    note: `md5=${md5Value} | sha1=${sha1Value} | sha256=${shaValue}`,
+    observationType: 'enrichment_derived',
+    relationMethod: 'enrichment_result'
+  });
+  const md5Link = await pool.query(
+    `SELECT artifact_id FROM file_artifact_ioc_links WHERE ioc_item_id = $1`,
+    [md5Ioc.id]
+  );
+  assert.equal(md5Link.rows[0].artifact_id, artifactId);
+
+  // T4: repeated enrichment is idempotent.
+  await writeHash(sha1Ioc, {
+    sourceName: 'VirusTotal',
+    note: `md5=${md5Value} | sha1=${sha1Value} | sha256=${shaValue}`,
+    observationType: 'enrichment_derived',
+    relationMethod: 'enrichment_result'
+  });
+  const knownAgain = await pool.query(
+    `SELECT COUNT(*)::int AS n FROM file_artifact_hashes WHERE artifact_id = $1::uuid`,
+    [artifactId]
+  );
+  assert.equal(knownAgain.rows[0].n, 3);
+
+  // T5: partial provider response does not fabricate MD5.
+  const partialSha = sha256();
+  const partialSha1 = sha1();
+  const partialShaIoc = await insertIoc({ type: 'sha256', value: partialSha, sourceName: `PartialVT:${TOKEN}` });
+  await writeHash(partialShaIoc, {
+    sourceName: 'VirusTotal',
+    note: `sha1=${partialSha1} | sha256=${partialSha}`,
+    observationType: 'enrichment_derived',
+    relationMethod: 'enrichment_result'
+  });
+  const partialArt = (await pool.query(
+    `SELECT artifact_id FROM file_artifact_ioc_links WHERE ioc_item_id = $1`,
+    [partialShaIoc.id]
+  )).rows[0].artifact_id;
+  created.artifactIds.push(partialArt);
+  const partialHashes = await pool.query(
+    `SELECT hash_type FROM file_artifact_hashes WHERE artifact_id = $1::uuid ORDER BY hash_type`,
+    [partialArt]
+  );
+  assert.deepEqual(partialHashes.rows.map((r) => r.hash_type), ['sha1', 'sha256']);
+
+  // T10: original feed memberships untouched.
+  const memAfter = await pool.query(
+    `SELECT id, ioc_item_id, status FROM ioc_feed_memberships
+     WHERE ioc_item_id = ANY($1::bigint[]) ORDER BY ioc_item_id`,
+    [[shaIoc.id, sha1Ioc.id]]
+  );
+  assert.deepEqual(memAfter.rows, memBefore.rows);
+});
+
+test('T6 conflicting MD5 value on same artifact records auditable conflict', opts, async () => {
+  const shaValue = sha256();
+  const md5A = md5();
+  const md5B = md5();
+  const ioc = await insertIoc({ type: 'sha256', value: shaValue, sourceName: `ConflictVT:${TOKEN}` });
+  await writeHash(ioc, {
+    sourceName: 'VirusTotal',
+    note: `md5=${md5A} | sha256=${shaValue}`,
+    observationType: 'enrichment_derived',
+    relationMethod: 'enrichment_result'
+  });
+  const artifactId = (await pool.query(
+    `SELECT artifact_id FROM file_artifact_ioc_links WHERE ioc_item_id = $1`,
+    [ioc.id]
+  )).rows[0].artifact_id;
+  const conflict = await attachExactHash(pool, {
+    artifact_id: artifactId,
+    hash_type: 'md5',
+    hash_value: md5B,
+    verification_source: 'VirusTotal'
+  });
+  assert.equal(conflict.ok, false);
+  assert.equal(conflict.reason, 'conflict');
+  assert.equal(conflict.conflict_kind, 'hash_type_value_mismatch');
+  const open = await pool.query(
+    `SELECT reason, status FROM file_artifact_merge_conflicts
+     WHERE conflicting_hash_value = $1 AND status = 'open'`,
+    [md5B]
+  );
+  assert.ok(open.rows.length >= 1);
+  assert.equal(open.rows[0].reason, 'hash_type_already_bound_to_different_value');
+  const kept = await pool.query(
+    `SELECT normalized_hash_value FROM file_artifact_hashes
+     WHERE artifact_id = $1::uuid AND hash_type = 'md5'`,
+    [artifactId]
+  );
+  assert.equal(kept.rows.length, 1);
+  assert.equal(kept.rows[0].normalized_hash_value, md5A);
+});
+
 test('T15 unverified conflicting hash does not merge artifacts', opts, async () => {
   const a = sha256();
   const b = sha256();

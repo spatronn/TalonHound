@@ -25,6 +25,7 @@ import {
 } from './lib/analystIntelligenceForm.js';
 import { getDerivedInfrastructureContext, isDerivedProviderApplicable, isProviderApplicable } from './lib/iocProviderApplicability.js';
 import { buildIntelligenceSectionOrder } from './lib/intelligenceSectionOrder.js';
+import { buildKnownHashDisplayRows } from './lib/knownHashRows.js';
 import IocThreatContextSection from './components/threatLibrary/IocThreatContextSection.jsx';
 import { createSnapshotHandlerCache } from './lib/providerSnapshotState.js';
 
@@ -481,16 +482,8 @@ export function AnalystIntelligenceSection({ iocId, canWrite, active, onSummaryC
 
 function FileArtifactInformationCard({ fileInformation, fileArtifact }) {
   const primary = fileArtifact?.primary_hash || null;
-  const known = Array.isArray(fileArtifact?.known_hashes) ? fileArtifact.known_hashes : [];
   const fi = fileInformation || {};
-
-  const hashRows = known.length
-    ? known
-    : [
-        fi.md5 ? { hash_type: 'md5', value: fi.md5, is_primary: false } : null,
-        fi.sha1 ? { hash_type: 'sha1', value: fi.sha1, is_primary: false } : null,
-        fi.sha256 ? { hash_type: 'sha256', value: fi.sha256, is_primary: true } : null
-      ].filter(Boolean);
+  const hashRows = buildKnownHashDisplayRows(fileArtifact, fi);
 
   return (
     <div style={{ border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
@@ -546,7 +539,7 @@ function FileArtifactInformationCard({ fileInformation, fileArtifact }) {
               </td>
             </tr>
           ) : null}
-          {!known.length ? (
+          {!hashRows.length ? (
             <>
               <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>MD5</th><td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{fi.md5 || '-'}</td></tr>
               <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>SHA1</th><td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{fi.sha1 || '-'}</td></tr>
