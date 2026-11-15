@@ -397,6 +397,36 @@ async function attachExactHashInTx(client, input) {
       if (createdArtifact) {
         await deleteEmptyOrphanArtifactIfSafe(client, artifactId);
       }
+      // (artifact_id, hash_type) unique: another value already occupies this type slot.
+      if (artifactId) {
+        const { rows: typePeers } = await client.query(
+          `SELECT id, normalized_hash_value FROM file_artifact_hashes
+           WHERE artifact_id = $1 AND hash_type = $2`,
+          [artifactId, hash.hash_type]
+        );
+        const peer = typePeers[0] || null;
+        if (peer && peer.normalized_hash_value !== hash.normalized_hash_value) {
+          await recordMergeConflict(client, {
+            conflicting_hash_type: hash.hash_type,
+            conflicting_hash_value: hash.normalized_hash_value,
+            candidate_artifact_ids: [artifactId],
+            reason: 'hash_type_already_bound_to_different_value',
+            evidence: {
+              existing_hash_value: peer.normalized_hash_value,
+              requested_hash_value: hash.normalized_hash_value,
+              artifact_id: artifactId
+            }
+          });
+          return {
+            ok: false,
+            reason: 'conflict',
+            conflict_kind: 'hash_type_value_mismatch',
+            artifact_id: artifactId,
+            hash_id: peer.id,
+            orphan_cleaned: cleaned
+          };
+        }
+      }
       return {
         ok: false,
         reason: 'unique_violation',
@@ -660,6 +690,65 @@ export async function ensureArtifactForFileHashIoc(client, input) {
  * @param {import('pg').PoolClient} client
  * @param {object} input
  */
+/**
+ * Attach one provider-set hash to an artifact and record sibling mapping / IOC links.
+ * @param {import('pg').PoolClient} client
+ * @param {object} input
+ * @param {{ hash_type: string, normalized_hash_value: string }} hash
+ * @param {string} artifactId
+ */
+async function attachProviderHashToArtifact(client, input, hash, artifactId) {
+  const attached = await attachExactHash(client, {
+    artifact_id: artifactId,
+    hash_type: hash.hash_type,
+    hash_value: hash.normalized_hash_value,
+    verification_source: input.source_name || 'provider_exact_hash_set'
+  });
+
+  const isPrimary =
+    hash.hash_type === input.primary_hash?.hash_type
+    && hash.normalized_hash_value === input.primary_hash?.normalized_hash_value;
+
+  // Direct observation only for the hash the source actually submitted as primary.
+  // Sibling mappings get provider_hash_mapping.
+  if (input.source_name && attached.ok && attached.hash_id) {
+    if (!isPrimary && input.provider_mapping) {
+      await upsertSourceObservation(client, {
+        artifact_id: artifactId,
+        source_name: input.source_name,
+        feed_id: input.feed_id || null,
+        observed_hash_id: attached.hash_id,
+        observed_hash_type: hash.hash_type,
+        observed_hash_value: hash.normalized_hash_value,
+        observation_type: OBSERVATION_TYPE.PROVIDER_MAPPING,
+        relation_method: RELATION_METHOD.PROVIDER_EXACT_HASH_SET,
+        raw_ref: { role: 'sibling_in_provider_record' }
+      });
+    }
+  }
+
+  // Link any existing IOC for this sibling hash
+  if (attached.ok) {
+    const iocRows = await client.query(
+      `SELECT id, public_id, observable_type, observable
+       FROM ioc_items
+       WHERE observable_type = $1 AND observable = $2`,
+      [hash.hash_type, hash.normalized_hash_value]
+    );
+    for (const ioc of iocRows.rows) {
+      await linkIocToArtifact(client, {
+        artifact_id: artifactId,
+        ioc_item_id: ioc.id,
+        ioc_observable_type: ioc.observable_type,
+        ioc_public_id: ioc.public_id,
+        linked_hash_id: attached.hash_id
+      });
+    }
+  }
+
+  return attached;
+}
+
 export async function attachProviderExactHashSet(client, input) {
   const hashes = extractExactHashesFromNote({
     observableType: input.primary_hash?.hash_type,
@@ -683,68 +772,36 @@ export async function attachProviderExactHashSet(client, input) {
   // (e.g. ThreatFox published md5/sha1/sha256 as separate IOCs) - that is merge evidence,
   // not a blocking conflict. True unsafe multi-mapping is recorded via
   // detectMultiArtifactConflict + attachExactHash unique binding conflicts.
+  //
+  // Before returning needs_merge, attach any currently unbound hashes (e.g. VT MD5 with
+  // no IOC row) onto this artifact so a subsequent merge moves them instead of dropping
+  // them. dualWrite also re-attaches against the canonical after merge.
   const otherArtifactIds = [...new Set(
     hits.map((h) => h.artifact_id).filter((id) => id && id !== input.artifact_id)
   )];
   if (otherArtifactIds.length >= 1) {
+    const boundKeys = new Set(hits.map((h) => `${h.hash_type}:${h.normalized_hash_value}`));
+    const unbound = hashes.filter((h) => !boundKeys.has(`${h.hash_type}:${h.normalized_hash_value}`));
+    const preMergeResults = [];
+    if (input.artifact_id && unbound.length) {
+      for (const h of unbound) {
+        preMergeResults.push(await attachProviderHashToArtifact(client, input, h, input.artifact_id));
+      }
+      await recomputePrimaryHash(client, input.artifact_id);
+    }
     return {
       ok: true,
       needs_merge_with: otherArtifactIds[0],
       needs_merge_with_ids: otherArtifactIds,
-      results: hits
+      results: hits.concat(preMergeResults),
+      pre_merged_unbound: unbound.length,
+      conflict: multi.conflict
     };
   }
 
   const results = [];
   for (const h of hashes) {
-    const attached = await attachExactHash(client, {
-      artifact_id: input.artifact_id,
-      hash_type: h.hash_type,
-      hash_value: h.normalized_hash_value,
-      verification_source: input.source_name || 'provider_exact_hash_set'
-    });
-    results.push(attached);
-
-    const isPrimary =
-      h.hash_type === input.primary_hash?.hash_type
-      && h.normalized_hash_value === input.primary_hash?.normalized_hash_value;
-
-    // Direct observation only for the hash the source actually submitted as primary.
-    // Sibling mappings get provider_hash_mapping.
-    if (input.source_name && attached.ok && attached.hash_id) {
-      if (!isPrimary && input.provider_mapping) {
-        await upsertSourceObservation(client, {
-          artifact_id: input.artifact_id,
-          source_name: input.source_name,
-          feed_id: input.feed_id || null,
-          observed_hash_id: attached.hash_id,
-          observed_hash_type: h.hash_type,
-          observed_hash_value: h.normalized_hash_value,
-          observation_type: OBSERVATION_TYPE.PROVIDER_MAPPING,
-          relation_method: RELATION_METHOD.PROVIDER_EXACT_HASH_SET,
-          raw_ref: { role: 'sibling_in_provider_record' }
-        });
-      }
-    }
-
-    // Link any existing IOC for this sibling hash
-    if (attached.ok) {
-      const iocRows = await client.query(
-        `SELECT id, public_id, observable_type, observable
-         FROM ioc_items
-         WHERE observable_type = $1 AND observable = $2`,
-        [h.hash_type, h.normalized_hash_value]
-      );
-      for (const ioc of iocRows.rows) {
-        await linkIocToArtifact(client, {
-          artifact_id: input.artifact_id,
-          ioc_item_id: ioc.id,
-          ioc_observable_type: ioc.observable_type,
-          ioc_public_id: ioc.public_id,
-          linked_hash_id: attached.hash_id
-        });
-      }
-    }
+    results.push(await attachProviderHashToArtifact(client, input, h, input.artifact_id));
   }
 
   await recomputePrimaryHash(client, input.artifact_id);

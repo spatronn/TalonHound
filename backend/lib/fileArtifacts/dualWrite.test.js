@@ -536,4 +536,14 @@ describe('fileArtifacts/dualWrite transaction safety', () => {
     assert.match(dualWriteSrc, /resolveOpenProviderHashSetConflicts/);
     assert.match(dualWriteSrc, /merge_fan_in/);
   });
+
+  it('dualWrite re-attaches provider hash set after merge (VT unbound MD5)', () => {
+    assert.match(dualWriteSrc, /attachProviderExactHashSet/);
+    assert.match(dualWriteSrc, /normalizeExactHash/);
+    // Post-merge re-attach must target the canonical artifact, not the pre-merge one.
+    assert.match(
+      dualWriteSrc,
+      /result\.artifact_id = canonical\.id[\s\S]*?attachProviderExactHashSet\(client,\s*\{[\s\S]*?artifact_id:\s*canonical\.id/
+    );
+  });
 });

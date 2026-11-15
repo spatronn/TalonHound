@@ -90,7 +90,7 @@ jobs:
 
       - name: Run backend unit tests
         working-directory: backend
-        run: npm run test:release && npm run test:storage-lifecycle && npm run test:migrate && npm run test:sprint-smoke && npm run test:setup-wizard && npm run test:malware-families && npm run test:test-support && npm run test:mcp && npm run test:threat-library && npm run test:file-identity
+        run: npm run test:release && npm run test:storage-lifecycle && npm run test:migrate && npm run test:sprint-smoke && npm run test:setup-wizard && npm run test:malware-families && npm run test:test-support && npm run test:mcp && npm run test:threat-library && npm run test:file-identity && npm run test:file-artifacts && npm run test:virustotal
 
       - name: Threat Library evaluation gate (no silent skips)
         working-directory: backend

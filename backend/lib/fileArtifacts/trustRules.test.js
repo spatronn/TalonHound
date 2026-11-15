@@ -92,6 +92,17 @@ describe('fileArtifacts trust rules', () => {
     );
   });
 
+  it('attachProviderExactHashSet attaches unbound siblings before needs_merge return', () => {
+    assert.match(attachSrc, /pre_merged_unbound/);
+    assert.match(attachSrc, /currently unbound hashes/);
+    assert.match(attachSrc, /attachProviderHashToArtifact/);
+  });
+
+  it('hash_type value mismatch records an auditable merge conflict', () => {
+    assert.match(attachSrc, /hash_type_already_bound_to_different_value/);
+    assert.match(attachSrc, /hash_type_value_mismatch/);
+  });
+
   it('metadata merge keeps first_seen min and last_seen max', () => {
     const m = mergeArtifactMetadata(
       { first_seen_at: '2024-06-01T00:00:00Z', last_seen_at: '2024-06-02T00:00:00Z' },

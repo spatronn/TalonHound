@@ -7,9 +7,9 @@
  * job results show the root cause instead of a follow-on aborted-transaction message.
  */
 
-import { isExactFileHashIocType } from './hashNormalize.js';
+import { isExactFileHashIocType, normalizeExactHash } from './hashNormalize.js';
 import { isFileArtifactsDualWriteEnabled } from './flags.js';
-import { ensureArtifactForFileHashIoc } from './attach.js';
+import { ensureArtifactForFileHashIoc, attachProviderExactHashSet } from './attach.js';
 import { mergeFileArtifacts } from './merge.js';
 import { selectCanonicalArtifact } from './metadataPolicy.js';
 import { OBSERVATION_TYPE, RELATION_METHOD } from './observations.js';
@@ -188,6 +188,26 @@ export async function dualWriteFileArtifactForObservable(client, input) {
           }
           result.merged_into = canonical.id;
           result.artifact_id = canonical.id;
+
+          // Match backfill applyProviderHashSet: after merge, re-apply the full
+          // provider exact-hash set against the canonical artifact. Without this,
+          // attachProviderExactHashSet's needs_merge early-return left unbound
+          // siblings (commonly VT MD5 with no IOC row) unattached forever.
+          if (input.attachNoteSiblings || input.providerMapping) {
+            const primary = normalizeExactHash(row.observable_type, row.observable);
+            const note = input.note != null ? input.note : row.note;
+            if (primary && note) {
+              result.siblings = await attachProviderExactHashSet(client, {
+                artifact_id: canonical.id,
+                primary_hash: primary,
+                note,
+                source_name: input.sourceName || row.source_name || null,
+                feed_id: feedId,
+                provider_mapping: Boolean(input.providerMapping)
+              });
+            }
+          }
+
           const primaryHash = cands.find((r) => r.id === canonical.id);
           await resolveOpenProviderHashSetConflicts(client, {
             hash_type: String(input.observableType || 'sha256').toLowerCase(),
