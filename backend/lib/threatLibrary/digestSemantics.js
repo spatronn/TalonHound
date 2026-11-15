@@ -34,7 +34,11 @@ export const DIGEST_KINDS = Object.freeze({
   WELL_KNOWN: 'well_known_digest',
   // Account / tunnel / tenant / device identifiers that merely share the hex
   // shape ("Cloudflare tunnel account tag", "bot ID") — tl-digest-v3.
-  IDENTIFIER: 'account_identifier'
+  IDENTIFIER: 'account_identifier',
+  // Content-addressed object names: a Git commit / blob / tree id or an OCI
+  // container image index / manifest digest. They name a repository or
+  // registry object, not a file sample a hash feed can match (tl-digest-v6).
+  OBJECT_ID: 'object_identifier'
 });
 
 /** Non-file digest kinds: never md5 / sha1 / sha256 Indicators. */
@@ -46,7 +50,8 @@ export const NON_FILE_DIGEST_KINDS = Object.freeze(
     DIGEST_KINDS.CRYPTO_KEY,
     DIGEST_KINDS.CREDENTIAL,
     DIGEST_KINDS.WELL_KNOWN,
-    DIGEST_KINDS.IDENTIFIER
+    DIGEST_KINDS.IDENTIFIER,
+    DIGEST_KINDS.OBJECT_ID
   ])
 );
 
@@ -67,6 +72,10 @@ const KIND_PATTERNS = [
   [
     DIGEST_KINDS.IDENTIFIER,
     /(?:^|[^a-z0-9])(?:(?:account|tenant|tunnel|client|customer|user|device|machine|bot|victim|affiliate|campaign|session|install(?:ation)?|subscription|organi[sz]ation|org)[\s_-]*(?:account[\s_-]*)?(?:tags?|ids?|identifiers?|uuids?|guids?)|account[\s_-]*tags?)(?:[^a-z0-9]|$)/i
+  ],
+  [
+    DIGEST_KINDS.OBJECT_ID,
+    /(?:^|[^a-z0-9])(?:(?:git\s+)?commits?(?:\s+(?:hash(?:es)?|ids?|sha-?1?))?|git\s+(?:blob|tree|object)s?|(?:container\s+|docker\s+|oci\s+)?image\s+(?:index(?:es)?|manifests?|digests?)|(?:index|manifest)\s+digests?)(?:[^a-z0-9]|$)/i
   ],
   [
     DIGEST_KINDS.CREDENTIAL,
@@ -149,6 +158,26 @@ export function digestLabelWindow(text, value) {
   return before.slice(prev ? prev.index + prev[0].length : 0, last.index).slice(-120);
 }
 
+/** A label window that is only a list conjunction ("and", ",", "/"). */
+const CONJUNCTION_ONLY_LABEL_RE = /^\s*(?:,|&|\/|and|or|,\s*and|,\s*or)\s*$/i;
+
+/**
+ * The digest written immediately before `value` on the same line, joined to
+ * it by a conjunction only, else null.
+ * @param {string} text
+ * @param {string} value
+ */
+function previousDigestOnLine(text, value) {
+  const hay = refangTextForExtraction(String(text || ''));
+  const idx = hay.toLowerCase().indexOf(String(value || '').trim().toLowerCase());
+  if (idx < 0) return null;
+  let previous = null;
+  for (const m of hay.slice(0, idx).matchAll(OTHER_DIGEST_RE)) previous = m;
+  if (!previous) return null;
+  const between = hay.slice(previous.index + previous[0].length, idx);
+  return CONJUNCTION_ONLY_LABEL_RE.test(between) ? previous[0] : null;
+}
+
 /**
  * Semantic kind of a digest-shaped value from its governing label.
  * @param {string} text line / row / surrounding window that contains the value
@@ -161,7 +190,13 @@ export function classifyHexDigest(text, value, opts = {}) {
   if (known) {
     return { kind: DIGEST_KINDS.WELL_KNOWN, label: '', reason: `digest_of_trivial_input_${known.algorithm}` };
   }
-  const label = digestLabelWindow(text, value);
+  let label = digestLabelWindow(text, value);
+  // "commits <h1> and <h2>": a label that is only a conjunction after another
+  // digest is that digest's label — the run shares one subject (tl-digest-v6).
+  if (CONJUNCTION_ONLY_LABEL_RE.test(label)) {
+    const previous = previousDigestOnLine(text, value);
+    if (previous) label = digestLabelWindow(text, previous);
+  }
   const own = classifyLabel(label, { bareKey: /^[0-9a-f]{16,}$/i.test(String(value || '').trim()) });
   if (own.kind !== DIGEST_KINDS.FILE || own.reason === 'file_noun_after_label') return own;
   // The column header of a table cell is that cell's label ("Imphash |

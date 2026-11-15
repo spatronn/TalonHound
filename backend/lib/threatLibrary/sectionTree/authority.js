@@ -282,6 +282,14 @@ export function applySectionTreeAuthority(document, candidates, opts = {}) {
             return next;
           }
 
+          // A live link to the publisher's own site / media (the post's
+          // featured image, logo or permalink after the last IOC table) is
+          // page metadata wherever it sits: an authoritative ancestor never
+          // turns it into an inventory row (tl-section-tree-v22).
+          if (o.zone === 'source_metadata' && (o.zone_reason === 'source_host' || o.zone_reason === 'source_url')) {
+            return next;
+          }
+
           if (authZone && STRONG_IOC_ZONES.has(authZone)) {
             // Under tree-authoritative ancestry: zone follows ancestry.
             next.zone = authZone;

@@ -97,7 +97,7 @@ function appendixVariant(o) {
 
 test('contract versions', () => {
   assert.equal(PDF_LAYOUT_VERSION, 'threat_library_pdf_v9');
-  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v19');
+  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v20');
 });
 
 // --- inventory reconstruction primitives ------------------------------------

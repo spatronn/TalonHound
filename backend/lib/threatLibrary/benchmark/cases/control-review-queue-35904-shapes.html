@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head><title>Review queue 35904 control: prefixed digests, object ids, host labels, nested references</title></head>
+<body>
+<article>
+<h1>Review queue 35904 control: prefixed digests, object ids, host labels, nested references</h1>
+<p>The operator pushed a trojanized release through the project's own CI, then pulled a second stage from a lookalike domain. The loader also reached an attacker-controlled PostgreSQL server: rphost.exe → 46.166.79[.]31:5432/TCP.</p>
+
+<h2>Indicators of compromise</h2>
+<table>
+  <thead><tr><th>Indicator</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>litellm[.]dev</td><td>Exfiltration domain</td></tr>
+    <tr><td>sha256:1bbcb1443bc962e45f5aad53fe3d2c30600e0379715fb6c664cdd3ac126c339e</td><td>Infected litellm image index</td></tr>
+    <tr><td>sha256:7598727f209d717041db37f7dca271d3a7d328a279890e0e1d55375729aeb86d</td><td>Malicious litellm macOS x86-64 .whl hash</td></tr>
+    <tr><td>sha256:0aaf7ba346d41ef2f40390436738b001180d5a1c03aa093f121078a9969d9a1a</td><td>Malicious litellm macOS ARM64 .whl hash</td></tr>
+    <tr><td>sha256:12d4ccc5c6f8d35cf4f2cf233b7f3e418e863e657d81ff5f5fc9e210005b9484</td><td>Malicious litellm Windows x86-64 .whl hash</td></tr>
+    <tr><td>46.166.79[.]31</td><td>Attacker PostgreSQL server</td></tr>
+  </tbody>
+</table>
+
+<h3>Malicious Package and Release</h3>
+<ul>
+  <li>bee-js commit de2f74e784b2eafa0d66fbb6d88b42ea11ee34cf</li>
+  <li>Swarm Desktop commits 2de727046706062d38edfbbf8340f32d1eb2bdfb and dc7d7455c95b3092eb14bff2bd93315b84b066fa</li>
+  <li>Pull request: branch wfx-docs; file docs/wfx-audit.md (git blob ee6e5addfe591923fc385553cb66cf0d25634a6b)</li>
+</ul>
+
+<h3>Exfiltration locations</h3>
+<pre>soraki-proxy.20245aad98d27b1b1a2f0f103e1d7ee0.workers[.]dev</pre>
+
+<h2>Technical Indicators and Reference Data</h2>
+<p>The following information is provided for security teams investigating or detecting activity associated with this campaign.</p>
+<h5>Appendix B — Network Indicators</h5>
+<p>Confirmed hosts:</p>
+<p>c54b986c1c.nxcli.io</p>
+<p>0b8918640c.nxcli.io</p>
+<p>Redirect/shortener domains:</p>
+<p>authgpt.info</p>
+<p>ai-billing.info</p>
+<h5>Appendix D — References</h5>
+<p>Public corroboration:</p>
+<p>pcrisk.es — documents 188f0289b4[.]nxcli.io by name as a fraudulent OpenAI subscription payment page.</p>
+<p>spam.org — open complaint thread against nxcli.io, 51+ recorded spam complaints.</p>
+<p>Hosting provider documentation:</p>
+<p>https://www.nexcess.com/platform/sites-stores/</p>
+<h5>Appendix E — Revision History</h5>
+<p>Initial publication.</p>
+
+<h2>SHA-256 hashes of key artefacts</h2>
+<table>
+  <thead><tr><th>Artefact</th><th>SHA-256</th></tr></thead>
+  <tbody>
+    <tr><td>BQW1eqi3.js</td><td>fa78c205894dc08383fd6a44f475f76f2a37f1f7e43044a2594ca30bb595de61</td></tr>
+  </tbody>
+</table>
+<p>22 September 2026</p>
+<p>Research Team</p>
+<p>https://i0.wp.com/research.example/wp-content/uploads/2026/09/cover.png?fit=1672%2C941&amp;ssl=1</p>
+</article>
+</body>
+</html>

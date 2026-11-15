@@ -54,10 +54,10 @@ const member = (out, value) => {
 };
 
 test('versions: tl-candidates-v44, threat_library_html_v9, tl-section-tree-v10, tl-table-v13', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v69');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v70');
   assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v13');
-  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v21');
-  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v19');
+  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v22');
+  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v20');
 });
 
 // --- D1. Table nested in a heading ------------------------------------------

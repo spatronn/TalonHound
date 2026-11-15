@@ -133,6 +133,13 @@ export function readDocumentText(blocks, acc, ctx) {
       }
       const path = raw.slice(raw.indexOf('/'));
       if (path.length < 2) continue;
+      // "46.166.79[.]31:5432/TCP": the suffix names the transport of an
+      // ip:port endpoint, not a URL path (tl-candidates-v70). The endpoint
+      // pass reads the address with its port.
+      if (ipHost && /^\/(?:tcp|udp|sctp)$/i.test(path)) {
+        countReason(typeDiag.scheme_less_resources.rejected, 'transport_protocol_suffix');
+        continue;
+      }
       spans.push([spanStart, start + raw.length]);
       const base = pathBasenameFromUrl(`http://${raw}`);
       if (v.host) knownUrlHosts.add(v.host);

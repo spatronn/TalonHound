@@ -1,0 +1,49 @@
+{
+  "id": "control-review-queue-35904-shapes",
+  "title": "Control: algorithm-prefixed digests, Git / OCI object ids, hex host labels, ip:port/TCP, nested appendix references, trailing page media",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": ["control", "review_queue_35904", "prefixed_digest", "object_identifier", "hostname_hex_label", "endpoint_transport", "nested_reference_heading", "source_metadata", "mode_a"],
+  "source": {
+    "kind": "html_file",
+    "path": "control-review-queue-35904-shapes.html",
+    "url": "https://research.example/blog/review-queue-35904-control/"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed from the 27-report review queue 35904-35934 audit shapes with the publishers' own values: 35915 Datadog LiteLLM IOC table ('sha256:<hex>' cells, one an image index digest); 35907 Socket bee-js / Swarm Desktop commit ids and 35908 StepSecurity 'git blob' id; 35921 Anthropic 'soraki-proxy.<32 hex>.workers[.]dev' exfiltration host; 35905 BI.ZONE 'rphost.exe -> 46.166.79[.]31:5432/TCP'; 35913 Fortra 'Technical Indicators and Reference Data' > 'Appendix D - References'; 35916 D3Lab featured image after the last IOC table",
+      "verified_by": "construction + manual comparison with each publisher article",
+      "verified_at": "2026-11-15",
+      "notes": "Algorithm-prefixed digests are the digest; an image index digest and Git commit / blob ids name repository or registry objects (context, not file Indicators); the 32-hex label inside a workers.dev host is part of the host; '/TCP' after ip:port is the transport, the address is the Indicator; a bibliography appendix nested under an IOC heading asserts nothing; the post's featured image URL is page metadata."
+    },
+    "indicators": [
+      { "type": "domain", "value": "litellm.dev", "assertion": "explicit" },
+      { "type": "sha256", "value": "7598727f209d717041db37f7dca271d3a7d328a279890e0e1d55375729aeb86d", "assertion": "explicit" },
+      { "type": "sha256", "value": "0aaf7ba346d41ef2f40390436738b001180d5a1c03aa093f121078a9969d9a1a", "assertion": "explicit" },
+      { "type": "sha256", "value": "12d4ccc5c6f8d35cf4f2cf233b7f3e418e863e657d81ff5f5fc9e210005b9484", "assertion": "explicit" },
+      { "type": "ip", "value": "46.166.79.31", "assertion": "explicit" },
+      { "type": "domain", "value": "soraki-proxy.20245aad98d27b1b1a2f0f103e1d7ee0.workers.dev", "assertion": "explicit" },
+      { "type": "domain", "value": "c54b986c1c.nxcli.io", "assertion": "explicit" },
+      { "type": "domain", "value": "0b8918640c.nxcli.io", "assertion": "explicit" },
+      { "type": "domain", "value": "authgpt.info", "assertion": "explicit" },
+      { "type": "domain", "value": "ai-billing.info", "assertion": "explicit" },
+      { "type": "sha256", "value": "fa78c205894dc08383fd6a44f475f76f2a37f1f7e43044a2594ca30bb595de61", "assertion": "explicit" }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      { "type": "sha256", "value": "1bbcb1443bc962e45f5aad53fe3d2c30600e0379715fb6c664cdd3ac126c339e" },
+      { "type": "sha1", "value": "de2f74e784b2eafa0d66fbb6d88b42ea11ee34cf" },
+      { "type": "sha1", "value": "2de727046706062d38edfbbf8340f32d1eb2bdfb" },
+      { "type": "sha1", "value": "dc7d7455c95b3092eb14bff2bd93315b84b066fa" },
+      { "type": "sha1", "value": "ee6e5addfe591923fc385553cb66cf0d25634a6b" },
+      { "type": "md5", "value": "20245aad98d27b1b1a2f0f103e1d7ee0" },
+      { "type": "url", "value": "46.166.79.31:5432/TCP" },
+      { "type": "domain", "value": "pcrisk.es" },
+      { "type": "domain", "value": "spam.org" },
+      { "type": "url", "value": "https://www.nexcess.com/platform/sites-stores/" },
+      { "type": "url", "value": "https://i0.wp.com/research.example/wp-content/uploads/2026/09/cover.png?fit=1672%2C941&ssl=1" }
+    ],
+    "sections": []
+  }
+}

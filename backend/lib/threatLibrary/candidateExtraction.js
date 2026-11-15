@@ -336,8 +336,18 @@ export {
  * text is a trailing "<--" comment is still that row. A paragraph that is
  * only an obfuscated author address is contact metadata. A URL that continues
  * into an unexpanded "<placeholder>" is a template, not a shortened URL.
+ * v70 (27-report review queue 35904–35934): tl-section-tree-v22, tl-zones-v20,
+ * tl-table-v20 and tl-digest-v6. An IOC table cell written "sha256:<hex>" is
+ * that digest (the glued algorithm prefix is notation). A Git commit / blob id
+ * or a container image index / manifest digest names a repository or registry
+ * object, never a file sample (a digest joined by "and" shares the label of
+ * the digest before it). A hex run that is a whole inner label of a hostname
+ * ("proxy.<hex>.workers.dev") is part of that host. "ip:port/TCP" is an
+ * endpoint with its transport, not a URL. A nested "Appendix D — References"
+ * ends the IOC heading above it for its own subtree, and the publisher's own
+ * page media after the last IOC table stays page metadata.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v69';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v70';
 
 import { normalizeObservable } from '../observable-normalization.js';
 import { refangObservable, refangTextForExtraction } from './defang.js';

@@ -79,8 +79,13 @@
  * v21 (import audit 35890–35901 P1): a signature rule ("--") or an author
  * footer label ("Keywords:", "2 comment(s)") closes an open indicator
  * appendix. The byline after it is not part of the indicator section.
+ * v22 (27-report review queue): a reference / bibliography heading nested
+ * deeper than an open IOC heading ("Technical Indicators and Reference Data"
+ * › "Appendix D — References") ends that authority for its own subtree,
+ * including the labels inside it ("Public corroboration:"); an enumerated
+ * appendix title is classified by its title (tl-zones-v20).
  */
-export const SECTION_TREE_VERSION = 'tl-section-tree-v21';
+export const SECTION_TREE_VERSION = 'tl-section-tree-v22';
 
 /**
  * Authoritative scope-engine stamp when section-tree owns membership zones.

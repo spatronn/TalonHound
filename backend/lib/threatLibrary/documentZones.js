@@ -106,7 +106,7 @@ import {
  * ("21GopherWhisper: …") is the same repeated chrome as "22 GopherWhisper: …",
  * so it never becomes a section heading that re-opens an earlier IOC section.
  */
-export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v19';
+export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v20';
 
 /**
  * Pure filename/hash inventory whose row boundaries were lost before zoning
@@ -274,6 +274,9 @@ const LABEL_MAX_CHARS = Object.freeze({
   code: 40
 });
 
+/** "Appendix D — <title>", "Annex 2: <title>", "Appendix IV. <title>". */
+const APPENDIX_ENUMERATOR_RE = /^(?:appendix|annex|annexe|anhang)\s+(?:[A-Z]|[0-9]{1,2}|[IVX]{1,4})\s*[—–:.\-]\s*(.+)$/i;
+
 export function classifyHeadingText(text, opts = {}) {
   const t = collapseLetterSpacing(String(text || '').trim());
   if (!t || t.length > 200) return null;
@@ -282,6 +285,11 @@ export function classifyHeadingText(text, opts = {}) {
   if (looksLikeIocTableHeader(t)) return 'explicit_ioc_section';
   const roleZone = zoneForSectionRole(classifySectionRole(t, { allowDescriptiveSuffix: opts.allowDescriptiveSuffix, allowPrefixedIoc: opts.isHeading !== false }));
   if (roleZone) return /** @type {DocumentZone} */ (roleZone);
+  // An enumerated appendix whose title is a bibliography ("Appendix D —
+  // References", "Annex 2: Further reading") is that reference list; the
+  // enumerator is numbering, not topic (tl-zones-v20).
+  const appendixTitle = APPENDIX_ENUMERATOR_RE.exec(t);
+  if (appendixTitle && classifyHeadingText(appendixTitle[1], opts) === 'reference_section') return 'reference_section';
   for (const [zone, patterns] of Object.entries(HEADING_HINTS)) {
     const max = LABEL_MAX_CHARS[zone];
     if (max && t.length > max) continue;

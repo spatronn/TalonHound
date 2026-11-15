@@ -182,7 +182,7 @@ async function paper() {
 
 test('contract versions: pdf_v8 layout, tl-zones-v19', () => {
   assert.equal(PDF_LAYOUT_VERSION, 'threat_library_pdf_v9');
-  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v19');
+  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v20');
 });
 
 test('wrapped SHA-1 cells: three-line hashes stay one table row each, no hex headings', async () => {

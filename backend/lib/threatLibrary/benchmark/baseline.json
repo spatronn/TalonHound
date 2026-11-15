@@ -1,8 +1,8 @@
 {
   "versions": {
-    "candidates": "tl-candidates-v69",
-    "zones": "tl-zones-v19",
-    "tables": "tl-table-v19",
+    "candidates": "tl-candidates-v70",
+    "zones": "tl-zones-v20",
+    "tables": "tl-table-v20",
     "type_resolver": "tl-type-resolver-v29",
     "html": "threat_library_html_v13",
     "pdf": "threat_library_pdf_v9",
@@ -10,11 +10,11 @@
     "metrics": "tl-benchmark-metrics-v2"
   },
   "aggregate": {
-    "cases": 111,
-    "cases_exact": 109,
+    "cases": 112,
+    "cases_exact": 110,
     "indicators": {
-      "expected": 1601,
-      "tp": 1599,
+      "expected": 1612,
+      "tp": 1610,
       "fp": 0,
       "fn": 2,
       "fn_not_extracted": 0,
@@ -28,7 +28,7 @@
     "candidate_extraction_recall": 0.9994,
     "context_only_accuracy": 1,
     "legitimate_exclusion_accuracy": 1,
-    "assertion_accuracy": 0.9695,
+    "assertion_accuracy": 0.9698,
     "section_accuracy": 1,
     "non_indicators_promoted": 0,
     "ai_dependent_entries": 15,
@@ -36,9 +36,9 @@
     "quality": {
       "high": 0,
       "warning": 3,
-      "info": 26,
+      "info": 27,
       "cases_flagged": 3,
-      "exact_cases": 109,
+      "exact_cases": 110,
       "exact_cases_flagged": 3,
       "failing_cases": 2,
       "failing_cases_flagged": 0
@@ -423,6 +423,34 @@
       "assertions_checked": 5,
       "warning_codes": [
         "authoritative_table_rows_demoted"
+      ]
+    },
+    "control-review-queue-35904-shapes": {
+      "members": [
+        "domain:0b8918640c.nxcli.io",
+        "domain:ai-billing.info",
+        "domain:authgpt.info",
+        "domain:c54b986c1c.nxcli.io",
+        "domain:litellm.dev",
+        "domain:soraki-proxy.20245aad98d27b1b1a2f0f103e1d7ee0.workers.dev",
+        "ip:46.166.79.31",
+        "sha256:0aaf7ba346d41ef2f40390436738b001180d5a1c03aa093f121078a9969d9a1a",
+        "sha256:12d4ccc5c6f8d35cf4f2cf233b7f3e418e863e657d81ff5f5fc9e210005b9484",
+        "sha256:7598727f209d717041db37f7dca271d3a7d328a279890e0e1d55375729aeb86d",
+        "sha256:fa78c205894dc08383fd6a44f475f76f2a37f1f7e43044a2594ca30bb595de61"
+      ],
+      "tp": 11,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 11,
+      "assertions_checked": 11,
+      "warning_codes": [
+        "non_file_digest_reclassified"
       ]
     },
     "control-streaming-ssr-fallback-root": {

@@ -519,6 +519,9 @@ function appendixRoot(stack) {
 
 function nearestAuthoritative(stack) {
   for (let i = stack.length - 1; i >= 0; i -= 1) {
+    // A nested reference heading: labels inside it never re-open the IOC
+    // heading above it (tl-section-tree-v22).
+    if (stack[i].referenceBarrier) return null;
     if (stack[i].authoritative && STRONG_IOC_ZONES.has(stack[i].zone)) return stack[i];
   }
   return null;
@@ -885,7 +888,14 @@ export function annotateSectionTree(doc, opts = {}) {
       // asserted by the appendix above it (tl-section-tree-v16).
       // Judged against what is still open now that siblings have been popped: "Files"
       // after "Hosts" is a child of the appendix, whatever was on top before.
-      blocksAuthority: !authoritative && !isNegativeHeading && Boolean(nearestAuthoritative(stack)) &&
+      // A reference / bibliography heading nested deeper than an open IOC
+      // heading ("Technical Indicators and Reference Data" › "Appendix D —
+      // References") ends that authority for its own subtree: popping the
+      // stack cannot reach an ancestor at a shallower level
+      // (tl-section-tree-v22).
+      referenceBarrier: isNegativeHeading && Boolean(nearestAuthoritative(stack)),
+      blocksAuthority: (isNegativeHeading && Boolean(nearestAuthoritative(stack))) ||
+        !authoritative && !isNegativeHeading && Boolean(nearestAuthoritative(stack)) &&
         // A short line holding a field or a value is a row of the group, not a label.
         !(!isRealHeading && (KEY_VALUE_RECORD_LINE_RE.test(t) || OBSERVABLE_RE.test(refangTextForExtraction(t)))) &&
         !isInventoryGroupHeading(t, groupLabel, blocks, i, chromeIds)
