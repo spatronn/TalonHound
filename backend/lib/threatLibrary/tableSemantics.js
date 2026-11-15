@@ -113,11 +113,31 @@ function embeddedAbsoluteUrl(token) {
  * ("0xFD91…", exactly 32 hex after "0x") is that digest. "0x" + 40 hex is an
  * EVM address and "0x" + 64 hex an EVM transaction hash / storage word, never
  * read as SHA-1 / SHA-256.
+ * v20 (27-report review queue): a digest cell written with its algorithm as a
+ * glued prefix ("sha256:<64 hex>", "md5=<32 hex>") is that digest; the prefix
+ * is notation and must name the run's own length, otherwise the cell is left
+ * alone.
  */
-export const TABLE_SEMANTICS_VERSION = 'tl-table-v19';
+export const TABLE_SEMANTICS_VERSION = 'tl-table-v20';
 
 /** "0x" + exactly an MD5 run, as one whole token (v19). 40 / 64 hex are EVM values. */
 export const HEX_LITERAL_DIGEST_RE = /^0x([0-9a-f]{32})$/i;
+
+/** "<algorithm>:<hex>" / "<algorithm>=<hex>" as one whole token (v20). */
+const ALGORITHM_PREFIXED_DIGEST_RE = /^(md-?5|sha-?1|sha-?256)\s*[:=]\s*([0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$/i;
+const ALGORITHM_DIGEST_LENGTH = Object.freeze({ md5: 32, sha1: 40, sha256: 64 });
+
+/**
+ * The bare digest of an algorithm-prefixed cell token ("sha256:<hex>"), or
+ * null when the token is not one or the prefix names another length.
+ * @param {string} token
+ */
+export function algorithmPrefixedDigest(token) {
+  const m = ALGORITHM_PREFIXED_DIGEST_RE.exec(String(token || '').trim());
+  if (!m) return null;
+  const algorithm = m[1].toLowerCase().replace('-', '');
+  return ALGORITHM_DIGEST_LENGTH[algorithm] === m[2].length ? m[2] : null;
+}
 
 /** Type cell naming the content of a request rather than an observable type (v13). */
 const REQUEST_CONTENT_TYPE_CELL_RE =
@@ -575,6 +595,11 @@ function parseToken(token, declared, ctx = {}) {
   // address / transaction hash (tl-table-v19); `raw` keeps the spelling.
   const hexLiteral = HEX_LITERAL_DIGEST_RE.exec(t);
   if (hexLiteral) t = hexLiteral[1];
+  // A digest the publisher wrote with its algorithm glued on ("sha256:<hex>",
+  // a container / package manifest convention): the prefix is notation, the
+  // identity is the bare digest (tl-table-v20). `raw` keeps the spelling.
+  const prefixedDigest = algorithmPrefixedDigest(t);
+  if (prefixedDigest) t = prefixedDigest;
   let port = null;
   // Publisher IOC cells prefix a hostname with a non-HTTP scheme
   // ("fqdn://ipfs[.]io", "fqdn://relay.example:443"). The scheme names the

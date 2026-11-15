@@ -63,8 +63,8 @@ const H5 = hex('e5');
 const H6 = hex('f6');
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v69');
-  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v21');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v70');
+  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v22');
   assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v29');
 });
 

@@ -14,6 +14,7 @@
 
 import { refangObservable, refangTextForExtraction } from './defang.js';
 import { normalizeIpAddress } from '../publicIp.js';
+import { FILE_EXT_HINT } from './observableTypeResolver.js';
 
 /** Characters that continue a DNS label / token. */
 const DNS_TOKEN_CHAR_RE = /[A-Za-z0-9_-]/;
@@ -147,19 +148,26 @@ export function isOnlyEmbeddedInDnsHostname(sourceText, candidateType, candidate
  * rest of its label by "-" and that label sits in a dotted hostname. Such a
  * run is part of a hostname, not a file hash. A hash written as its own token
  * (`<hash>`, `<hash>.exe`, `sha256:<hash>`) is untouched.
+ * A run that is a whole inner label of a hostname — dots on both sides after
+ * another label (`proxy.<32 hex>.workers.dev`, a per-account subdomain) — is
+ * the same: it names a host, never a file (tl-candidates-v70). A leading run
+ * (`<hash>.exe`, `<hash>.bin`) has no label before it and stays a hash.
  * @param {string} text already-refanged haystack
  * @param {number} start
  * @param {number} end
  */
 export function hexRunIsHostnameLabelFragment(text, start, end) {
   const hay = String(text || '');
-  if (hay[start - 1] !== '-' && hay[end] !== '-') return false;
+  const innerLabel = hay[start - 1] === '.' && hay[end] === '.' && /[A-Za-z0-9-]/.test(hay[start - 2] || '');
+  if (hay[start - 1] !== '-' && hay[end] !== '-' && !innerLabel) return false;
   let s = start;
   while (s > 0 && /[A-Za-z0-9.-]/.test(hay[s - 1])) s -= 1;
   let e = end;
   while (e < hay.length && /[A-Za-z0-9.-]/.test(hay[e])) e += 1;
   const token = hay.slice(s, e).replace(/^[.-]+|[.-]+$/g, '');
-  return /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$/i.test(token);
+  if (!/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$/i.test(token)) return false;
+  // "stage.<hash>.exe" is a file name, not a host.
+  return !(innerLabel && FILE_EXT_HINT.has(token.slice(token.lastIndexOf('.') + 1).toLowerCase()));
 }
 
 /** Algorithm / hash words that may lead a digest with a hyphen ("SHA256-<hex>"). */

@@ -27,8 +27,8 @@ const RELAY = 'relay-node-17.net';
 const PATH_URL = 'https://example.test/callback';
 
 test('structural heading scope contracts', () => {
-  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v19');
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v69');
+  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v20');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v70');
 });
 
 function htmlDoc(inner) {
