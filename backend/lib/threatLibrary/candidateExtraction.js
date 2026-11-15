@@ -346,8 +346,14 @@ export {
  * endpoint with its transport, not a URL. A nested "Appendix D — References"
  * ends the IOC heading above it for its own subtree, and the publisher's own
  * page media after the last IOC table stays page metadata.
+ * v71 (historical digest consistency 35418 / 35724 / 35737): tl-digest-v7. An
+ * OCI digest written "index sha256:<hex>" / "amd64 manifest sha256:<hex>" is
+ * a registry object; "source revision <hex>" is a commit. A bare occurrence of
+ * a value the document names elsewhere as such an object (a table row
+ * "<hex> | Pushed to … next branch" beside "Commit <hex>") is that object,
+ * unless its own label or row names a file.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v70';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v71';
 
 import { normalizeObservable } from '../observable-normalization.js';
 import { refangObservable, refangTextForExtraction } from './defang.js';
@@ -367,6 +373,7 @@ import { createExplicitTableAssertionTracker, structuralCompleteness } from './e
 import { inferSlashDateOrder } from './sourceObservation.js';
 import { markIncompleteUrlPrefixes, markTruncatedUrlDuplicates, resolveOtpSuffixedTableUrls, MAX_TOKEN_LOG, candidateKey, listLeadInsByBlock, valueLineLeadInsByBlock, codeListNamesByBlock, tableCellTexts } from './candidateHelpers.js';
 import { createCandidateAccumulator } from './candidateAccumulator.js';
+import { documentObjectIdentifiers } from './digestSemantics.js';
 import { readTypedTables } from './candidateTablePass.js';
 import { readDocumentText } from './candidateTextPass.js';
 
@@ -451,7 +458,8 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   const acc = createCandidateAccumulator({
     tableOrdinals, listLeadIns, valueLineLeadIns, codeListNames, sourceHost, normalizedSourceUrl,
     typeDiag, explicitTableAssertions, referenceColumnValues, noteRejectedToken,
-    extractionVersion: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION
+    extractionVersion: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION,
+    objectIdentifiers: documentObjectIdentifiers(blocks)
   });
   const { byKey, urlHostIndex, countReason, rememberExample, resolveTruncatedDigests, resolvePendingDotted, foldSchemeLessUrlAliases } = acc;
 

@@ -75,7 +75,7 @@ const KIND_PATTERNS = [
   ],
   [
     DIGEST_KINDS.OBJECT_ID,
-    /(?:^|[^a-z0-9])(?:(?:git\s+)?commits?(?:\s+(?:hash(?:es)?|ids?|sha-?1?))?|git\s+(?:blob|tree|object)s?|(?:container\s+|docker\s+|oci\s+)?image\s+(?:index(?:es)?|manifests?|digests?)|(?:index|manifest)\s+digests?)(?:[^a-z0-9]|$)/i
+    /(?:^|[^a-z0-9])(?:(?:git\s+)?commits?(?:\s+(?:hash(?:es)?|ids?|sha-?1?))?|git\s+(?:blob|tree|object)s?|(?:source|git|vcs)\s+revisions?|(?:container\s+|docker\s+|oci\s+)?image\s+(?:index(?:es)?|manifests?|digests?)|(?:index|manifest)\s+digests?)(?:[^a-z0-9]|$)/i
   ],
   [
     DIGEST_KINDS.CREDENTIAL,
@@ -189,6 +189,11 @@ export function classifyHexDigest(text, value, opts = {}) {
   const known = wellKnownDigest(value);
   if (known) {
     return { kind: DIGEST_KINDS.WELL_KNOWN, label: '', reason: `digest_of_trivial_input_${known.algorithm}` };
+  }
+  // OCI notation: "<index|manifest|config|layer> … sha256:<hex>" names a
+  // registry object of a container image, not a file sample (tl-digest-v7).
+  if (isOciObjectDigest(text, value)) {
+    return { kind: DIGEST_KINDS.OBJECT_ID, label: 'oci', reason: 'oci_object_digest' };
   }
   let label = digestLabelWindow(text, value);
   // "commits <h1> and <h2>": a label that is only a conjunction after another
@@ -325,6 +330,73 @@ function classifyLabel(label, opts = {}) {
   // A file noun after the non-file noun names the file ("certificate-signed sample SHA256:").
   if (FILE_NOUN_RE.test(words.slice(best.at + 1))) return { kind: DIGEST_KINDS.FILE, label, reason: 'file_noun_after_label' };
   return { kind: best.kind, label, reason: `${best.kind}_label` };
+}
+
+/**
+ * "Image index: sha256:<hex>", "(index sha256:<hex>", "amd64 manifest
+ * sha256:<hex>": the OCI digest notation (algorithm glued to the hex) right
+ * after an index / manifest / config / layer noun. Without the glued prefix
+ * a "manifest" label is a file ("package.json | Malicious manifest | <hex>").
+ */
+const OCI_OBJECT_LABEL_RE = /(?:^|[^a-z0-9])(?:index|manifests?|config|layers?)\s*[:=]?\s*sha-?256:\s*$/i;
+
+/**
+ * @param {string} text
+ * @param {string} value hex
+ */
+export function isOciObjectDigest(text, value) {
+  const hay = refangTextForExtraction(String(text || ''));
+  const v = String(value || '').trim().toLowerCase();
+  if (!hay || !v) return false;
+  const lower = hay.toLowerCase();
+  for (let at = lower.indexOf(v); at >= 0; at = lower.indexOf(v, at + v.length)) {
+    if (OCI_OBJECT_LABEL_RE.test(hay.slice(Math.max(0, at - 60), at))) return true;
+  }
+  return false;
+}
+
+/** Reasons that only mean "no subject named": the default file reading. */
+const DEFAULT_FILE_REASONS = new Set(['unlabelled', 'file_label']);
+
+/**
+ * Hex values the document itself names as repository / registry objects
+ * anywhere ("Commit 3eab…", "source revision 2053…", "manifest sha256:…").
+ * A bare occurrence of the same value elsewhere (a table row "3eab… | Pushed
+ * to … next branch") is that object, never a file sample (tl-digest-v7).
+ * @param {Array<{ text?: string }>} blocks
+ * @returns {Set<string>}
+ */
+export function documentObjectIdentifiers(blocks) {
+  const out = new Set();
+  for (const b of blocks || []) {
+    const text = String(b?.text || '');
+    if (!text) continue;
+    for (const line of text.split(/\r?\n|\s¶\s/)) {
+      for (const m of line.matchAll(OTHER_DIGEST_RE)) {
+        const v = m[0].toLowerCase();
+        if (out.has(v)) continue;
+        if (classifyHexDigest(line, v).kind === DIGEST_KINDS.OBJECT_ID) out.add(v);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * The file-hash reading of `digest` only defaulted (no subject named, no file
+ * noun in the label or row description) and the document names the value as
+ * an object identifier elsewhere: read it as that object.
+ * @param {{ kind: string, reason: string, label?: string }} digest
+ * @param {string} value
+ * @param {Set<string>|null|undefined} objectIdentifiers
+ * @param {string|null} [rowDescription]
+ */
+export function coreferencedObjectDigest(digest, value, objectIdentifiers, rowDescription = null) {
+  if (!objectIdentifiers || !objectIdentifiers.size) return null;
+  if (digest?.kind !== DIGEST_KINDS.FILE || !DEFAULT_FILE_REASONS.has(digest.reason)) return null;
+  if (!objectIdentifiers.has(String(value || '').trim().toLowerCase())) return null;
+  if (FILE_NOUN_RE.test(String(digest.label || '')) || FILE_NOUN_RE.test(String(rowDescription || ''))) return null;
+  return { kind: DIGEST_KINDS.OBJECT_ID, label: digest.label || '', reason: 'object_identifier_coreference' };
 }
 
 /**

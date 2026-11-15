@@ -1,0 +1,35 @@
+{
+  "id": "control-historical-object-digests",
+  "title": "Control: Git commits, source revisions and OCI index / manifest digests beside real file hashes",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": ["control", "historical_digest_consistency", "object_identifier", "oci_digest", "commit_coreference", "mode_a"],
+  "source": {
+    "kind": "html_file",
+    "path": "control-historical-object-digests.html",
+    "url": "https://research.example/blog/historical-object-digests-control/"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed from finalized reports 35418 (Miasma table row 'Pushed to asyncapi/generator next branch' beside prose 'Commit <hex>'), 35724 ('source revision <hex>', 'Container Images' index + amd64/arm64 manifests) and 35737 ('index sha256:' / 'amd64 manifest sha256:'), with the publishers' own values; the package.json 'Malicious manifest' file row and the RAT binary row are real file hashes from 35418",
+      "verified_by": "construction + manual comparison with each publisher article",
+      "verified_at": "2026-11-15",
+      "notes": "Commit ids, source revisions and OCI index / manifest digests name repository or registry objects; they stay visible as context, never as sha1/sha256 file Indicators. An unprefixed hash on a 'Malicious manifest' file row is the file."
+    },
+    "indicators": [
+      { "type": "sha1", "value": "c8cb3f6d5b90c46686d2bf531dc1a5786e27edc5", "assertion": "explicit" },
+      { "type": "url", "value": "http://85.137.53.71:8080/api/v1/beacon", "assertion": "explicit" },
+      { "type": "sha256", "value": "167ce57ef59a32a6a0ef4137785828077879092d7f83ddbc1755d6e69116e0ad", "assertion": "explicit" }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      { "type": "sha1", "value": "3eab3ec9304aa26081358330491d3cfeb55cc245" },
+      { "type": "sha1", "value": "20535d8fa11f786a6c24df7488a0e449ed5f09ad" },
+      { "type": "sha256", "value": "1bbcb1443bc962e45f5aad53fe3d2c30600e0379715fb6c664cdd3ac126c339e" },
+      { "type": "sha256", "value": "bd1aeee419ea36da9aa2b657288da4101887be468f020ac63d22ba6ed84a3ea5" },
+      { "type": "sha256", "value": "56b74573eed6e4aafe4b50603dbe7853e0345f188c8e44a09f1098caf1f4bcdf" }
+    ],
+    "sections": []
+  }
+}
