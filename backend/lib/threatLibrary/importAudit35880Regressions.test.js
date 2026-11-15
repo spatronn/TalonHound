@@ -66,7 +66,7 @@ const members = (x) => x.candidates.filter((c) => isReportIndicatorMember(persis
 const byValue = (x, v) => x.candidates.filter((c) => c.normalized_value === v);
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v70');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v71');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v22');
   assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v29');
   assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v13');

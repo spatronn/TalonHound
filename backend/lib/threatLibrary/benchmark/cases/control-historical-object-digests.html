@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head><title>Historical object digests control: commits, revisions, OCI index and manifests</title></head>
+<body>
+<article>
+<h1>Historical object digests control: commits, revisions, OCI index and manifests</h1>
+<p>The threat actors pushed malicious commits directly to unprotected release branches (e.g., Commit 3eab3ec9304aa26081358330491d3cfeb55cc245 by attacker GitHub ID 148100). The provenance attached to the Linux amd64 image identifies the private release workflow and source revision 20535d8fa11f786a6c24df7488a0e449ed5f09ad.</p>
+
+<h2>Indicators of compromise</h2>
+<table>
+  <thead><tr><th>Indicator</th><th>Context</th></tr></thead>
+  <tbody>
+    <tr><td>c8cb3f6d5b90c46686d2bf531dc1a5786e27edc5</td><td>Core Miasma RAT binary.</td></tr>
+    <tr><td>3eab3ec9304aa26081358330491d3cfeb55cc245</td><td>Pushed to asyncapi/generator next branch.</td></tr>
+    <tr><td>hxxp://85.137.53[.]71:8080/api/v1/beacon</td><td>HTTP C2 beacon.</td></tr>
+  </tbody>
+</table>
+
+<h3>Container Images</h3>
+<ul>
+  <li>Image index: sha256:1bbcb1443bc962e45f5aad53fe3d2c30600e0379715fb6c664cdd3ac126c339e</li>
+  <li>Linux amd64 manifest: sha256:bd1aeee419ea36da9aa2b657288da4101887be468f020ac63d22ba6ed84a3ea5</li>
+  <li>Linux arm64 manifest: sha256:56b74573eed6e4aafe4b50603dbe7853e0345f188c8e44a09f1098caf1f4bcdf</li>
+</ul>
+
+<h3>Files</h3>
+<table>
+  <thead><tr><th>Indicator</th><th>Type</th><th>SHA256 hash</th></tr></thead>
+  <tbody>
+    <tr><td>package.json</td><td>Malicious manifest</td><td>167ce57ef59a32a6a0ef4137785828077879092d7f83ddbc1755d6e69116e0ad</td></tr>
+  </tbody>
+</table>
+</article>
+</body>
+</html>
