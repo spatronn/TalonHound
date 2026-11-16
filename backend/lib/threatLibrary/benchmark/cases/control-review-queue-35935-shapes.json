@@ -1,0 +1,43 @@
+{
+  "id": "control-review-queue-35935-shapes",
+  "title": "Control: footnoted IOC digests, in-row network roles, registration-profile rows, percent-encoded URLs, key / trivial digests, detection names",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": ["control", "review_queue_35935", "footnoted_digest", "row_network_role", "registration_attribute_row", "percent_encoded_url", "crypto_key", "well_known_digest", "detection_name", "mode_a"],
+  "source": {
+    "kind": "html_file",
+    "path": "control-review-queue-35935-shapes.html",
+    "url": "https://research.example/blog/review-queue-35935-control/"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed from Need Review reports 35952 (Proofpoint 'Indicators of compromise*' table with starred SHA-256 rows), 35955 (Proofpoint TA416 percent-encoded Bengali URL row), 35957 (Trend 'File | SHA256 | Detection name' table with FTP / HTTP server rows), 35946 (Proofpoint 'hardcoded AES-256-GCM key'), 35956 (Trend C&C 'Property | Value' registration table) and 35938 (Unit 42 web-shell list with the SHA-512(\"\") prefix), using the publishers' own values",
+      "verified_by": "construction + manual comparison with each publisher article",
+      "verified_at": "2026-11-16",
+      "notes": "A starred digest is that digest; the server rows are hosts; registrar name servers / SPF / MX hosts of the C2 profile, the AES key, the trivial digest and the detection names are never Indicators."
+    },
+    "indicators": [
+      { "type": "sha256", "value": "d9832d9208b2c4a34cf5220b1ebaf11f0425cf638ac67bf4669b11c80e460f58", "assertion": "explicit" },
+      { "type": "sha256", "value": "7f54cf5e2beb3f1f5d2b3ba1c6a16ce1927ffecd20a9d635329b1e16cb74fb14", "assertion": "explicit" },
+      { "type": "domain", "value": "officcee404.com", "assertion": "explicit" },
+      { "type": "domain", "value": "sfrclak.com", "assertion": "explicit" },
+      { "type": "url", "value": "https://gooledives.z48.web.core.windows.net/%e0%a6%a8%e0%a6%bf%e0%a6%b0%e0%a7%8d%e0%a6%ac%e0%a6%be%e0%a6%9a%e0%a6%a8_%e0%a7%a8%e0%a7%a6%e0%a7%a8%e0%a7%ac.html", "assertion": "explicit" },
+      { "type": "sha256", "value": "98442387d466f27357d727b3706037a4df12a78602b93df973b063462a677761", "assertion": "explicit" },
+      { "type": "sha256", "value": "aba7133f975a0788dd2728b4bbb1d7d948e50571a033a1e8f47a2691e98600c5", "assertion": "explicit" },
+      { "type": "sha256", "value": "369479bd9a248c9448705c222d81ff1a0143343a138fc38fc0ea00f54fcc1598", "assertion": "explicit" },
+      { "type": "domain", "value": "server09.mentality.cloud", "assertion": "explicit" },
+      { "type": "domain", "value": "syn1112223334445556667778889990.org", "assertion": "explicit" }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      { "type": "domain", "value": "dns1.registrar-servers.com" },
+      { "type": "domain", "value": "dns2.registrar-servers.com" },
+      { "type": "domain", "value": "spf.efwd.registrar-servers.com" },
+      { "type": "sha256", "value": "4f7a8c3d2e1b5f9071a6b2c8d4e3f50a92b1c7d6e8f4a30b5c2d9e1f7a6b8c4d" },
+      { "type": "sha256", "value": "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce" },
+      { "type": "domain", "value": "trojan.win32.downloader.cm" }
+    ],
+    "sections": []
+  }
+}

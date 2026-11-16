@@ -352,8 +352,18 @@ export {
  * a value the document names elsewhere as such an object (a table row
  * "<hex> | Pushed to … next branch" beside "Commit <hex>") is that object,
  * unless its own label or row names a file.
+ * v72 (review queue 35935–35959): tl-table-v21, tl-type-resolver-v30,
+ * tl-digest-v8. A full digest with a glued footnote marker ("<sha256>*") is
+ * that digest. A row whose other indicator cell holds a network role ("FTP
+ * Server") is typed by that role, not the column header ("File"). The
+ * registration rows of a key-value profile table ("Name servers", "DNS MX
+ * records", "SPF") are Context Only provenance. Percent-encoded UTF-8 in a URL
+ * path is never a "%NAME%" placeholder. "AES-256-GCM key" is key material. A
+ * trivial SHA-384 / SHA-512 cut to hash-column width is a well-known digest.
+ * An anti-malware detection name ("Trojan.Win32.DOWNLOADER.CM") is never a
+ * host.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v71';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v72';
 
 import { normalizeObservable } from '../observable-normalization.js';
 import { refangObservable, refangTextForExtraction } from './defang.js';
