@@ -238,7 +238,7 @@ export function splitIdentity(identity) {
 }
 
 const TYPE_LABELS = Object.freeze({
-  md5: 'MD5', sha1: 'SHA-1', sha256: 'SHA-256', ip: 'IP', ipv6: 'IPv6', domain: 'Domain', url: 'URL', cidr: 'CIDR'
+  md5: 'MD5', sha1: 'SHA-1', sha256: 'SHA-256', ip: 'IP', ipv6: 'IPv6', domain: 'Domain', url: 'URL', cidr: 'CIDR', email: 'Email'
 });
 
 export function identityTypeLabel(type) {

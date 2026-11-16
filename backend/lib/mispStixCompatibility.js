@@ -9,12 +9,13 @@
  *   ipv4-addr / ipv6-addr  → ip-dst  (CIDR uses ISSUBSET; still ip-dst)
  *   domain-name            → domain
  *   url                    → url
+ *   email-addr             → email-src (an address the actor sends from / controls)
  *   file:hashes.MD5        → md5
  *   file:hashes.'SHA-1'    → sha1
  *   file:hashes.'SHA-256'  → sha256
  *
  * Unsupported (omitted from STIX, therefore not imported):
- *   ssdeep, imphash, tlsh, email, ja3, and any other IOC type without a
+ *   ssdeep, imphash, tlsh, ja3, and any other IOC type without a
  *   STIX 2.1 comparison pattern in publishedFeedStix.stixPatternForIoc.
  *
  * Provenance: Indicator created/modified/valid_from and optional labels map to
@@ -29,6 +30,7 @@ const PATTERN_RULES = [
   { re: /^\[ipv6-addr:value(?:\s+=|\s+ISSUBSET)\s+'((?:\\'|\\\\|[^'\\])*)'\]$/, mispType: 'ip-dst' },
   { re: /^\[domain-name:value\s+=\s+'((?:\\'|\\\\|[^'\\])*)'\]$/, mispType: 'domain' },
   { re: /^\[url:value\s+=\s+'((?:\\'|\\\\|[^'\\])*)'\]$/, mispType: 'url' },
+  { re: /^\[email-addr:value\s+=\s+'((?:\\'|\\\\|[^'\\])*)'\]$/, mispType: 'email-src' },
   { re: /^\[file:hashes\.MD5\s+=\s+'((?:\\'|\\\\|[^'\\])*)'\]$/, mispType: 'md5' },
   { re: /^\[file:hashes\.'SHA-1'\s+=\s+'((?:\\'|\\\\|[^'\\])*)'\]$/, mispType: 'sha1' },
   { re: /^\[file:hashes\.'SHA-256'\s+=\s+'((?:\\'|\\\\|[^'\\])*)'\]$/, mispType: 'sha256' }
@@ -38,7 +40,6 @@ export const MISP_UNSUPPORTED_IOC_TYPES = Object.freeze([
   'ssdeep',
   'imphash',
   'tlsh',
-  'email',
   'ja3'
 ]);
 

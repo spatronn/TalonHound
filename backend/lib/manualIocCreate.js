@@ -20,6 +20,7 @@ import { ensureIocTagAssignment } from './tagCatalogService.js';
 import { parseExcludeTagIds } from './tagHelpers.js';
 import { inferExactHashType, normalizeHashValue } from './fileArtifacts/hashNormalize.js';
 import { parseNetworkObservable } from './networkObservable.js';
+import { isEmailObservable, parseEmailObservable } from './emailObservable.js';
 import { createServiceLogger } from './appLogger.js';
 import { runBestEffortFileArtifactDualWrite } from './fileArtifactDualWriteDiagnostics.js';
 
@@ -30,6 +31,10 @@ export function inferObservableType(value) {
   const v = String(value || '').trim();
   if (!v) return null;
   const isUrl = /^https?:\/\//i.test(v);
+  // An address is an `email` IOC; any other value with an "@" and no path is
+  // not an observable at all (it used to fall through to `domain`, storing
+  // "user@host" as a domain IOC).
+  if (!isUrl && !v.includes('/') && v.includes('@')) return isEmailObservable(v) ? 'email' : null;
   const isIpv4 = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/.test(v);
   if (isUrl || v.includes('/')) return 'url';
   if (isIpv4) return 'ip';
@@ -43,6 +48,10 @@ export function inferObservableType(value) {
  */
 export function resolveStorageObservableType(value, inferredType = null) {
   const inferred = inferredType || inferObservableType(value);
+  if (inferred === 'email') {
+    const email = parseEmailObservable(value);
+    return email.ok ? { ok: true, type: 'email', value: email.value } : { ok: false, error: email.error };
+  }
   if (inferred !== 'hash') return { ok: true, type: inferred, value: String(value || '').trim() };
   const normalized = normalizeHashValue(value);
   const exact = inferExactHashType(normalized);
@@ -82,6 +91,7 @@ export function resolveIocStorageIdentity(value) {
  */
 export function resolveCreateStorageIdentity(value, resolvedType = null) {
   if (resolvedType === 'url') return { ok: true, type: 'url', value: String(value || '').trim() };
+  if (resolvedType === 'email') return resolveStorageObservableType(value, 'email');
   return resolveIocStorageIdentity(value);
 }
 

@@ -96,7 +96,7 @@ function parseIocTypeParam(raw, feedIocTypes) {
   if (asMulti.ok && feedIocTypesKey(asMulti.value) === key) return key;
   // Single-type feeds accept the legacy scalar match (e.g. ?ioc_type=ip).
   if (types.length === 1 && types[0] === v) return key;
-  if (!asMulti.ok && !['ip', 'domain', 'url', 'hash'].includes(v)) {
+  if (!asMulti.ok && !['ip', 'domain', 'url', 'hash', 'email'].includes(v)) {
     return { error: 'Invalid ioc_type' };
   }
   return { error: 'ioc_type is not allowed for this feed' };

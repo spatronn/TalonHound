@@ -117,8 +117,15 @@ function embeddedAbsoluteUrl(token) {
  * glued prefix ("sha256:<64 hex>", "md5=<32 hex>") is that digest; the prefix
  * is notation and must name the run's own length, otherwise the cell is left
  * alone.
+ * v21: footnoted digests, in-row network roles, registration attribute rows.
+ * v22 (post-finalization remediation): an email address cell is an `email`
+ * value (a row typed "Email address" used to be rejected as unsupported), and
+ * a URL cell ending in one query-slot placeholder
+ * ("…/logon.aspx?uid=<target_specific_uuid>") is the published URL up to that
+ * parameter, the way the text pass reads it — so a table that becomes an IOC
+ * table once its email rows parse keeps its template-URL rows.
  */
-export const TABLE_SEMANTICS_VERSION = 'tl-table-v21';
+export const TABLE_SEMANTICS_VERSION = 'tl-table-v22';
 
 /** "0x" + exactly an MD5 run, as one whole token (v19). 40 / 64 hex are EVM values. */
 export const HEX_LITERAL_DIGEST_RE = /^0x([0-9a-f]{32})$/i;
@@ -526,6 +533,7 @@ function hintForDeclared(declared) {
     case 'url':
     case 'cve':
     case 'attack_technique':
+    case 'email':
       return declared.type;
     default:
       return null;
@@ -586,6 +594,8 @@ function isWildcardApexAssertable(base) {
  * @param {{ type: string, endpoint: boolean }|null} declared
  * @param {{ typeLabel?: string|null }} [ctx] raw row type cell / column label (source semantics)
  */
+const QUERY_SLOT_PLACEHOLDER_URL_RE = /^((?:https?|ftps?):\/\/[^\s<>]+=)\s*<\s*[A-Za-z_][\w-]{0,48}\s*>$/i;
+
 function parseToken(token, declared, ctx = {}) {
   let t = String(token || '').trim();
   // `2001:db8::` ends in colons that are part of the address, not punctuation.
@@ -607,6 +617,12 @@ function parseToken(token, declared, ctx = {}) {
   // identity is the bare digest (tl-table-v20). `raw` keeps the spelling.
   const prefixedDigest = algorithmPrefixedDigest(t);
   if (prefixedDigest) t = prefixedDigest;
+  // "…?uid=<target_specific_uuid>": one placeholder in the last query slot
+  // ends the published URL at that parameter (candidateTextPass reads the
+  // same template the same way); colon / digit slots and a second
+  // placeholder stay templates (tl-table-v22).
+  const querySlot = QUERY_SLOT_PLACEHOLDER_URL_RE.exec(t);
+  if (querySlot) t = querySlot[1];
   let port = null;
   // Publisher IOC cells prefix a hostname with a non-HTTP scheme
   // ("fqdn://ipfs[.]io", "fqdn://relay.example:443"). The scheme names the

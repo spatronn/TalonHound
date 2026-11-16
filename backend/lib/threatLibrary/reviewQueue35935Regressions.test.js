@@ -1,5 +1,5 @@
 /**
- * Review queue 35935–35959 (tl-candidates-v72): defects found auditing the 24
+ * Review queue 35935–35959 (tl-candidates-v73): defects found auditing the 24
  * Need Review reports against their publisher pages.
  *
  * A. 35952 (Proofpoint): IOC-table digests with a footnote marker
@@ -38,8 +38,8 @@ const SHA512_EMPTY_PREFIX = 'cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f
 const EVELYN = 'aba7133f975a0788dd2728b4bbb1d7d948e50571a033a1e8f47a2691e98600c5';
 
 test('review queue 35935 contracts', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v72');
-  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v21');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v73');
+  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v22');
   assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v30');
 });
 

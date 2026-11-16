@@ -47,7 +47,8 @@ export const CREATABLE_IOC_TYPES = Object.freeze([
   'md5',
   'sha1',
   'sha256',
-  'cidr'
+  'cidr',
+  'email'
 ]);
 
 const CREATABLE = new Set(CREATABLE_IOC_TYPES);
@@ -329,6 +330,44 @@ function isRoleCaptionedCode(occ) {
   return CAPTION_ROLE_RE.test(caption) && !CAPTION_NEGATIVE_RE.test(caption);
 }
 
+/** Reserved / special-use names (RFC 2606, RFC 6761) and private zones: never implant infrastructure. */
+const RESERVED_HOST_RE = /(?:^|\.)(?:example|invalid|localhost|test|local|localdomain|lan|internal|home\.arpa|onion)$|(?:^|\.)example\.(?:com|net|org)$/i;
+const CONFIG_EVIDENCE_TYPES = new Set(['domain', 'ip', 'ipv6', 'url']);
+
+function hostOfCandidate(candidate) {
+  const value = String(candidate?.normalized_value || '').trim().toLowerCase();
+  if (typeOf(candidate) !== 'url') return value;
+  try {
+    return new URL(value).hostname.replace(/^\[|\]$/g, '');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * The publisher recovered a configuration from the analyzed sample and this
+ * exact network value sits in one of its destination slots
+ * ("The malware's configuration, once decrypted, is as follows:" then
+ * "|A1:aeya388[.]club|o1:7880|…"; review-queue 35935, 35951). A decrypted
+ * implant configuration is the sample's own statement of where it connects,
+ * so it is operational evidence without a separate attacker-use sentence.
+ *
+ * Narrow by construction (tl-candidates-v73): the occurrence must carry the
+ * extractor's configuration key + lead-in (a dump of `key: value` slots right
+ * after a lead-in about a decrypted / extracted configuration that is not an
+ * example, template, or format description; a probe / decoy / update key never
+ * counts). Reserved and private names never qualify; provider / benign
+ * policies are checked by the caller first and still win.
+ * @param {object} candidate
+ */
+export function hasMalwareConfigurationEvidence(candidate) {
+  if (!CONFIG_EVIDENCE_TYPES.has(typeOf(candidate))) return false;
+  const host = hostOfCandidate(candidate);
+  if (!host || RESERVED_HOST_RE.test(host)) return false;
+  return occurrencesOf(candidate).some((occ) =>
+    String(occ?.malware_config_key || '').trim() !== '' && String(occ?.malware_config_lead_in || '').trim() !== '');
+}
+
 function isConnectivityCheck(candidate) {
   return clauseTexts(candidate).some((text) => CONNECTIVITY_RE.test(text) && !ABUSE_OVERRIDE_RE.test(text));
 }
@@ -513,9 +552,13 @@ export function classifyPromoteEligibility(candidate, opts = {}) {
   const policy = policyOf(candidate);
   const providerPolicy = PROVIDER_POLICIES.has(policy) || relationOf(candidate) === 'provider_service';
   const negativePolicy = NEGATIVE_PUBLISHER_POLICIES.has(policy) || policy.startsWith('ioc_excluded');
-  // A role label never outweighs a provider / benign reading of the value itself.
-  const operational = hasOperationalEvidence(candidate) ||
+  // A role label never outweighs a provider / benign reading of the value itself,
+  // and neither does a configuration slot (a config may point at a real service).
+  const narrativeOperational = hasOperationalEvidence(candidate) ||
     (!providerPolicy && !negativePolicy && hasPublisherRoleLabel(candidate));
+  const configEvidence = !narrativeOperational && !providerPolicy && !negativePolicy &&
+    hasMalwareConfigurationEvidence(candidate);
+  const operational = narrativeOperational || configEvidence;
 
   if (providerPolicy && !operational) {
     return blocked(
@@ -576,7 +619,10 @@ export function classifyPromoteEligibility(candidate, opts = {}) {
   if (operational) {
     const reason = providerPolicy
       ? 'The publisher shows this exact service observable being abused for attacker operations.'
-      : 'The narrative describes operational use of this exact observable (command and control, payload, phishing, or attacker infrastructure).';
+      : configEvidence
+        ? 'The publisher shows this exact observable in a malware configuration it recovered from the analyzed sample.'
+        : 'The narrative describes operational use of this exact observable (command and control, payload, phishing, or attacker infrastructure).';
+    const basis = providerPolicy ? 'abused_service' : configEvidence ? 'malware_configuration' : 'operational_evidence';
     const note = acceptedCorroboration(opts);
     if (!note) {
       return {
@@ -587,7 +633,7 @@ export function classifyPromoteEligibility(candidate, opts = {}) {
         code: 'promote_corroboration_required',
         detail: `Record why this exact observable is attacker infrastructure (at least ${PROMOTION_CORROBORATION_MIN} characters). The reason is stored with the promotion and audited.`,
         reason,
-        basis: 'operational_evidence',
+        basis,
         observable_role: role,
         publisher_evidence: evidenceSummary,
         blocked_class: null,
@@ -610,7 +656,7 @@ export function classifyPromoteEligibility(candidate, opts = {}) {
       code: null,
       detail: null,
       reason,
-      basis: providerPolicy ? 'abused_service' : 'operational_evidence',
+      basis,
       observable_role: role,
       publisher_evidence: evidenceSummary,
       blocked_class: null,

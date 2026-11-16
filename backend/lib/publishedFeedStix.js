@@ -113,6 +113,9 @@ export function stixPatternForIoc(observableType, value) {
   if (type === 'url') {
     return `[url:value = '${escaped}']`;
   }
+  if (type === 'email') {
+    return `[email-addr:value = '${escaped}']`;
+  }
   if (type === 'md5') {
     return `[file:hashes.MD5 = '${escaped}']`;
   }

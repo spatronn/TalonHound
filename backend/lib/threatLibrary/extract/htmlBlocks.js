@@ -50,10 +50,13 @@ import { createTableBlock } from '../canonicalDocument.js';
  * Nuxt slot content, `<template v-slot:content>`) is content, not noise; menus,
  * banners and React streaming placeholders stay noise (isContentTemplate).
  * Dropped regions record whether they held an IOC section heading.
- * Document extractor contract is threat_library_html_v13 so Refresh rebuilds
+ * v14 (35944): source accounting reads the page text with a separator at every
+ * block boundary (accountingTextOf), so "…com.</figcaption></figure>Figure 3"
+ * is no longer the token "com.Figure"; blocks are unchanged.
+ * Document extractor contract is threat_library_html_v14 so Refresh rebuilds
  * retained HTML under the current contract.
  */
-export const HTML_BLOCKS_VERSION = 'threat_library_html_v13';
+export const HTML_BLOCKS_VERSION = 'threat_library_html_v14';
 
 export function stripTags(s) {
   return String(s || '').replace(/<[^>]+>/g, ' ');
@@ -457,6 +460,29 @@ export function textOf(node) {
 }
 
 /**
+ * Block-level elements renderedText does not already separate. Source
+ * accounting reads the whole page as one string; without a boundary there,
+ * "<figcaption>… reviewerpress[.]com.</figcaption></figure>Figure 3 …" read as
+ * the token "reviewerpress[.]com.Figure", which no kept block holds, so the
+ * page reported a dropped observable region that was never dropped (35944).
+ */
+const ACCOUNTING_BOUNDARY_TAGS = new Set([
+  'figure', 'figcaption', 'section', 'article', 'aside', 'header', 'footer', 'nav', 'main',
+  'table', 'thead', 'tbody', 'tfoot', 'caption', 'td', 'th', 'ul', 'ol', 'dl', 'form', 'fieldset',
+  'details', 'hr', 'center'
+]);
+
+/**
+ * Rendered text of a whole page for source accounting: textOf with a
+ * separator at every block-level boundary. Inline markup stays joined
+ * ("r<span>eviewerpress[.]com</span>" is one token). Never used for blocks.
+ * @param {object} node
+ */
+export function accountingTextOf(node) {
+  return renderedText(node, false, ACCOUNTING_BOUNDARY_TAGS).replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
  * Visual lines of a node: `<br>` is a line boundary. Publishers write IOC
  * appendices as "<p><b>Hashes</b><br>H1 (a.exe)<br>H2 (b.exe)</p>"; keeping
  * the lines lets row / list detection read each value on its own, exactly as
@@ -477,7 +503,7 @@ export function preTextLinesOf(node) {
   return splitRenderedLines(renderedPreText(node));
 }
 
-function renderedText(node, lineBreaks) {
+function renderedText(node, lineBreaks, extraBoundaries = null) {
   const parts = [];
   const walk = (n) => {
     if (!n) return;
@@ -494,7 +520,8 @@ function renderedText(node, lineBreaks) {
       return;
     }
     if (tag === 'img') return;
-    const block = HEADING_TAGS.has(tag) || PARAGRAPH_TAGS.has(tag) || tag === 'li' || tag === 'tr' || tag === 'div' || tag === 'pre';
+    const block = HEADING_TAGS.has(tag) || PARAGRAPH_TAGS.has(tag) || tag === 'li' || tag === 'tr' || tag === 'div' || tag === 'pre' ||
+      (extraBoundaries !== null && extraBoundaries.has(tag));
     if (block) parts.push(' ');
     for (const c of n.children || []) walk(c);
     if (block || tag === 'td' || tag === 'th') parts.push(' ');

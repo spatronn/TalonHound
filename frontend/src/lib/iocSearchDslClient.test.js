@@ -126,7 +126,7 @@ test('Type dropdown no longer offers imphash/tlsh/ssdeep (not IOC types)', () =>
     assert.ok(!typeValues.includes(bad), `type must not offer ${bad}`);
   }
   // real IOC identity types remain
-  assert.deepEqual(typeValues, ['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256']);
+  assert.deepEqual(typeValues, ['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256', 'email']);
 });
 
 test('imphash/tlsh/ssdeep are registered attr fields with equals only', () => {

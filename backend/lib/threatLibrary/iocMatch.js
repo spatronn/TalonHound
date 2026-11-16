@@ -7,7 +7,7 @@ import { normalizeObservable } from '../observable-normalization.js';
 import { parseNetworkObservable } from '../networkObservable.js';
 import { deriveMatchState } from './constants.js';
 
-const MATCHABLE_IOC_TYPES = new Set(['ip', 'ipv6', 'cidr', 'domain', 'url', 'md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh']);
+const MATCHABLE_IOC_TYPES = new Set(['ip', 'ipv6', 'cidr', 'domain', 'url', 'md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh', 'email']);
 const IOC_TYPES = MATCHABLE_IOC_TYPES;
 const NETWORK_TYPES = new Set(['ip', 'ipv6', 'cidr']);
 

@@ -362,8 +362,18 @@ export {
  * trivial SHA-384 / SHA-512 cut to hash-column width is a well-known digest.
  * An anti-malware detection name ("Trojan.Win32.DOWNLOADER.CM") is never a
  * host.
+ * v73 (post-finalization remediation, 35943/35946/35948/35951/35955/35956):
+ * tl-table-v22. An email address is an `email` candidate (first-class IOC
+ * type) with the IOC layer's canonical identity; membership follows the same
+ * publisher-assertion rules as every other type (an IOC table / IOC-section
+ * row is an Indicator, a prose mention is context), a forged / spoofed sender
+ * is context only, and reserved-domain, redacted and package-specifier shapes
+ * are not addresses. A value in a destination slot of a malware configuration
+ * the publisher decrypted / extracted from the sample carries the
+ * configuration key + lead-in on its occurrence (promotion evidence only,
+ * never membership).
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v72';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v73';
 
 import { normalizeObservable } from '../observable-normalization.js';
 import { refangObservable, refangTextForExtraction } from './defang.js';
@@ -381,7 +391,7 @@ import {
 import { NON_NETWORK_RESOLVED_TYPES, RESOLVED_TYPES, buildTypeResolutionRecord, validateCanonicalIocValue } from './observableTypeResolver.js';
 import { createExplicitTableAssertionTracker, structuralCompleteness } from './explicitTableCompleteness.js';
 import { inferSlashDateOrder } from './sourceObservation.js';
-import { markIncompleteUrlPrefixes, markTruncatedUrlDuplicates, resolveOtpSuffixedTableUrls, MAX_TOKEN_LOG, candidateKey, listLeadInsByBlock, valueLineLeadInsByBlock, codeListNamesByBlock, tableCellTexts } from './candidateHelpers.js';
+import { markIncompleteUrlPrefixes, markTruncatedUrlDuplicates, resolveOtpSuffixedTableUrls, MAX_TOKEN_LOG, candidateKey, listLeadInsByBlock, valueLineLeadInsByBlock, codeListNamesByBlock, malwareConfigLeadInsByBlock, tableCellTexts } from './candidateHelpers.js';
 import { createCandidateAccumulator } from './candidateAccumulator.js';
 import { documentObjectIdentifiers } from './digestSemantics.js';
 import { readTypedTables } from './candidateTablePass.js';
@@ -411,6 +421,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   const listLeadIns = listLeadInsByBlock(annotated.blocks || []);
   const valueLineLeadIns = valueLineLeadInsByBlock(annotated.blocks || []);
   const codeListNames = codeListNamesByBlock(annotated.blocks || []);
+  const malwareConfigLeadIns = malwareConfigLeadInsByBlock(annotated.blocks || []);
   const diagnostics = {
     extraction_version: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION,
     explicit_tables: {
@@ -466,7 +477,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   /** Non-indicator table id → `type:value` keys of its reference-column cells. */
   const referenceColumnValues = new Map();
   const acc = createCandidateAccumulator({
-    tableOrdinals, listLeadIns, valueLineLeadIns, codeListNames, sourceHost, normalizedSourceUrl,
+    tableOrdinals, listLeadIns, valueLineLeadIns, codeListNames, malwareConfigLeadIns, sourceHost, normalizedSourceUrl,
     typeDiag, explicitTableAssertions, referenceColumnValues, noteRejectedToken,
     extractionVersion: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION,
     objectIdentifiers: documentObjectIdentifiers(blocks)

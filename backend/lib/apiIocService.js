@@ -21,9 +21,10 @@ import { formatIocEntityDisplay } from './auditIocContext.js';
 import { API_ERROR_CODE } from './apiV1Errors.js';
 import { inferExactHashType } from './fileArtifacts/hashNormalize.js';
 import { parseNetworkObservable } from './networkObservable.js';
+import { parseEmailObservable } from './emailObservable.js';
 import { resolveArtifactScopedIocIds } from './fileArtifacts/read.js';
 
-export const API_IOC_TYPES = Object.freeze(['ip', 'domain', 'url', 'hash']);
+export const API_IOC_TYPES = Object.freeze(['ip', 'domain', 'url', 'hash', 'email']);
 
 function apiActorAuditFields(apiKey) {
   return {
@@ -83,6 +84,16 @@ export function normalizeApiIocValue(type, value) {
         message: 'The supplied value is not a valid domain.'
       };
     }
+  } else if (t === 'email') {
+    const email = parseEmailObservable(v);
+    if (!email.ok) {
+      return {
+        ok: false,
+        code: API_ERROR_CODE.INVALID_IOC_VALUE,
+        message: 'The supplied value is not a valid email address.'
+      };
+    }
+    return { ok: true, type: 'email', value: email.value };
   } else if (t === 'url') {
     if (!/^https?:\/\//i.test(v)) {
       return {

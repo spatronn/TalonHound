@@ -94,7 +94,7 @@ export const FIELD_REGISTRY = Object.freeze({
   type: {
     kind: 'enum',
     operators: ENUM_OPERATORS,
-    allowedValues: ['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256']
+    allowedValues: ['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256', 'email']
   },
   // Forensic / alias: any known exact hash on the linked file artifact (or raw type when unlinked).
   known_hash_type: {

@@ -6,7 +6,7 @@ const HASH_TYPES = new Set(['md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh'
 export const FEED_WINDOWS = ['1d', '3d', '7d', 'all'];
 /** Alias making the VALID-vs-GENERATE distinction explicit at call sites. */
 export const VALID_FEED_WINDOWS = FEED_WINDOWS;
-export const FEED_IOC_TYPES = ['ip', 'domain', 'url', 'hash'];
+export const FEED_IOC_TYPES = ['ip', 'domain', 'url', 'hash', 'email'];
 const FEED_IOC_TYPE_SET = new Set(FEED_IOC_TYPES);
 
 /**
@@ -52,7 +52,7 @@ export function normalizeFeedIocTypes(raw) {
     const t = String(item || '').trim().toLowerCase();
     if (!t) continue;
     if (!FEED_IOC_TYPE_SET.has(t)) {
-      return { ok: false, error: 'ioc_types must be ip, domain, url, or hash' };
+      return { ok: false, error: 'ioc_types must be ip, domain, url, hash, or email' };
     }
     if (seen.has(t)) {
       return { ok: false, error: 'ioc_types must not contain duplicates' };
@@ -82,6 +82,7 @@ export function observableTypesForFeedIocType(iocType) {
   if (t === 'domain') return ['domain'];
   if (t === 'url') return ['url'];
   if (t === 'hash') return [...HASH_TYPES];
+  if (t === 'email') return ['email'];
   return [];
 }
 
@@ -100,7 +101,7 @@ export function observableTypesForFeedIocTypes(iocTypes) {
 export function feedCategoryForObservableType(observableType) {
   const t = String(observableType || '').toLowerCase();
   if (HASH_TYPES.has(t) || t === 'file_hash' || t === 'hash') return 'hash';
-  if (t === 'ip' || t === 'domain' || t === 'url') return t;
+  if (t === 'ip' || t === 'domain' || t === 'url' || t === 'email') return t;
   return null;
 }
 
@@ -153,6 +154,7 @@ export function normalizeFeedLine(row, feedIocType) {
   if (t === 'domain') return value.toLowerCase();
   if (t === 'url') return value;
   if (t === 'hash') return value.toLowerCase();
+  if (t === 'email') return value.toLowerCase();
   return value;
 }
 
