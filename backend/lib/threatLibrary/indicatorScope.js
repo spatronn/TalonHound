@@ -1960,6 +1960,12 @@ export function attachOccurrenceRelations(candidate) {
     // operational clause). Zone alone is never an assertion.
     // A row that names the value as a benign component asserts nothing malicious.
     o.asserted = detail.marker !== 'benign' && detail.marker !== 'provider' && detail.authoritative && (detail.structural_row || detail.relation === SOURCE_RELATIONS.OPERATIONAL_MALICIOUS);
+    // An email address is a publisher assertion only as a row the publisher
+    // listed (IOC table / IOC-section list): an address in prose — even an
+    // operational clause ("the disposable email … used to register …") — is
+    // report context, which an analyst may promote on that clause
+    // (tl-candidates-v73). Publishers that list addresses as IOCs list them.
+    if (String(candidate.candidate_type || '').toLowerCase() === 'email' && !detail.structural_row) o.asserted = false;
   }
   candidate.source_relation = strongestSourceRelation(candidate);
   return candidate;

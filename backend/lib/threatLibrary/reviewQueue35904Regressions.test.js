@@ -34,10 +34,10 @@ const H64_INDEX = '1bbcb1443bc962e45f5aad53fe3d2c30600e0379715fb6c664cdd3ac126c3
 const H32_LABEL = '20245aad98d27b1b1a2f0f103e1d7ee0';
 
 test('review queue 35904 contracts', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v72');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v73');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v22');
   assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v20');
-  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v21');
+  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v22');
 });
 
 function extract(blocks, sourceUrl = 'https://publisher.example/report') {

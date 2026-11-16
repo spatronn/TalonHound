@@ -900,6 +900,10 @@ export function buildCandidateEvidenceRecord(c) {
     value_line_lead_in: o.value_line_lead_in || undefined,
     // Name of the hunting-query / code list the value sits in (tl-candidates-v48).
     code_list_name: o.code_list_name || undefined,
+    // Configuration key and lead-in of a malware configuration dump the value
+    // sits in (tl-candidates-v73): promotion evidence, never membership.
+    malware_config_key: o.malware_config_key || undefined,
+    malware_config_lead_in: o.malware_config_lead_in ? String(o.malware_config_lead_in).slice(0, 300) : undefined,
     // A table row whose provider noun belongs to the operation (tl-candidates-v44).
     operator_owned_row: o.operator_owned_row === true ? true : undefined,
     // A value read from a table reference column (tool homepage / download link).

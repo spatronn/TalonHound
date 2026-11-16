@@ -1,3 +1,5 @@
+import { normalizeEmailObservable } from './emailObservable.js';
+
 export function normalizeUrlForMatch(value, opts = {}) {
   const dropHash = opts.dropHash !== false;
   const raw = String(value || '').trim();
@@ -28,5 +30,6 @@ export function normalizeObservable(type, value) {
   if (!v) return '';
   if (t === 'url') return normalizeUrlForMatch(v);
   if (t === 'domain') return v.toLowerCase();
+  if (t === 'email') return normalizeEmailObservable(v) || v.toLowerCase();
   return v;
 }

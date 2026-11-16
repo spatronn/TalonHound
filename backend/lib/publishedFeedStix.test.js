@@ -53,7 +53,9 @@ describe('STIX 2.1 pattern construction', () => {
   it('returns null for unsupported types (no invented SCOs)', () => {
     assert.equal(stixPatternForIoc('ssdeep', '3:abc'), null);
     assert.equal(stixPatternForIoc('imphash', 'aa'.repeat(16)), null);
-    assert.equal(stixPatternForIoc('email', 'a@b.c'), null);
+    assert.equal(stixPatternForIoc('ja3', 'aa'.repeat(16)), null);
+    // email is a first-class IOC type with a standard SCO (email-addr).
+    assert.equal(stixPatternForIoc('email', 'a@b.co'), "[email-addr:value = 'a@b.co']");
     assert.equal(stixPatternForIoc('ip', ''), null);
   });
 

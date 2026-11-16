@@ -27,7 +27,7 @@ describe('normalizeFeedIocTypes', () => {
   it('rejects empty, unknown, and duplicate values', () => {
     assert.equal(normalizeFeedIocTypes([]).ok, false);
     assert.equal(normalizeFeedIocTypes(null).ok, false);
-    assert.match(normalizeFeedIocTypes(['mutex']).error, /ip, domain, url, or hash/);
+    assert.match(normalizeFeedIocTypes(['mutex']).error, /ip, domain, url, hash, or email/);
     assert.match(normalizeFeedIocTypes(['ip', 'ip']).error, /duplicates/);
   });
 });

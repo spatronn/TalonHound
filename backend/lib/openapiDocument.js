@@ -103,7 +103,7 @@ export function buildOpenApiDocument({ serverUrl = '/' } = {}) {
           type: 'object',
           required: ['type', 'value'],
           properties: {
-            type: { type: 'string', enum: ['ip', 'domain', 'url', 'hash'] },
+            type: { type: 'string', enum: ['ip', 'domain', 'url', 'hash', 'email'] },
             value: { type: 'string', description: 'IOC observable value' },
             confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
             classifications: {

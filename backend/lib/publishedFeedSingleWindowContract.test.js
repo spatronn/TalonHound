@@ -30,7 +30,7 @@ const FORMAT_COMBOS = [
 
 test('VALID windows are fixed and must not be confused with generation targets', () => {
   assert.deepEqual(FEED_WINDOWS, ['1d', '3d', '7d', 'all']);
-  assert.deepEqual(FEED_IOC_TYPES, ['ip', 'domain', 'url', 'hash']);
+  assert.deepEqual(FEED_IOC_TYPES, ['ip', 'domain', 'url', 'hash', 'email']);
 });
 
 test('generationWindowsForFeed: every IOC type × every window yields exactly [configured]', () => {

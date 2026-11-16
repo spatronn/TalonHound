@@ -402,7 +402,7 @@ function dslQuote(value) {
   return `"${String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
-// The MCP/API `type` notion (ip|domain|url|hash) collapses several stored
+// The MCP/API `type` notion (ip|domain|url|hash|email) collapses several stored
 // observable_types, so translate each to the exact valid DSL `type` predicate rathe
 // than emitting an invalid `type:value`. `ip` covers IPv4 + IPv6; `hash` covers the
 // three identity hash types.
@@ -410,7 +410,8 @@ const MCP_TYPE_TO_DSL = Object.freeze({
   ip: `type in (${dslQuote('ip')}, ${dslQuote('ipv6')})`,
   domain: `type equals ${dslQuote('domain')}`,
   url: `type equals ${dslQuote('url')}`,
-  hash: `type in (${dslQuote('md5')}, ${dslQuote('sha1')}, ${dslQuote('sha256')})`
+  hash: `type in (${dslQuote('md5')}, ${dslQuote('sha1')}, ${dslQuote('sha256')})`,
+  email: `type equals ${dslQuote('email')}`
 });
 
 // Heuristic: does this string look like an *attempted* DSL expression (a known field

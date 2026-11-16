@@ -9,7 +9,7 @@ import {
 import { API_ERROR_CODE } from './apiV1Errors.js';
 
 test('parseApiIocType rejects unknown types', () => {
-  const r = parseApiIocType('email');
+  const r = parseApiIocType('mutex');
   assert.equal(r.ok, false);
   assert.equal(r.code, API_ERROR_CODE.INVALID_IOC_TYPE);
 });

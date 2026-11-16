@@ -21,6 +21,25 @@ import { recoverDefangedLinkDomain, versionColumnTokens, IPV4_RE, IPV4_PORT_RE, 
 const HEX_LITERAL_DIGEST_SCAN_RE = /(?<![0-9a-z_])0x([0-9a-f]{32})(?![0-9a-z_])/gi;
 
 /**
+ * An email address in running text, fanged or defanged: a dot-atom local part,
+ * an at-sign ("@", "[@]", "(@)", "[at]", "(at)"), and a hostname whose dots may
+ * be "[.]" / "(.)" / "[dot]" (with the stray space some publishers leave before
+ * a defanged dot). Validation is parseEmailObservable's (emailObservable.js).
+ */
+const EMAIL_SCAN_RE =
+  /(?<![\w.!#$%&'*+/?^`{|}~-])[A-Za-z0-9!#$%&'*+?^_`{|}~-]+(?:(?:\.|\[\.\]|\(\.\))[A-Za-z0-9!#$%&'*+?^_`{|}~-]+)*(?:@|\s?(?:\[@\]|\(@\)|\{@\}|\[at\]|\(at\))\s?)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:(?:\.|\s?(?:\[\.\]|\(\.\)|\[dot\])\s?)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+(?![A-Za-z0-9-]|\.[A-Za-z0-9])/gi;
+
+/** The sentence of `text` holding [start, end) (bounded to 240 characters each side). */
+function sentenceAround(text, start, end) {
+  const s = String(text || '');
+  const head = s.slice(Math.max(0, start - 240), start);
+  const tail = s.slice(end, end + 240);
+  const from = head.search(/[.!?]\s+(?=[^.!?]*$)/);
+  const to = tail.search(/[.!?](?:\s|$)/);
+  return `${from >= 0 ? head.slice(from + 1) : head}${s.slice(start, end)}${to >= 0 ? tail.slice(0, to) : tail}`;
+}
+
+/**
  * A paragraph whose entire text is one obfuscated address
  * ("brad [at] malware-traffic-analysis.net"). A list or table cell is a row.
  * @param {object} block
@@ -348,6 +367,39 @@ export function readDocumentText(blocks, acc, ctx) {
       if (/^T(1\d{3}|10\d{2}|11\d{2}|12\d{2}|15\d{2}|16\d{2})/.test(m[0])) {
         add(m[0], 'attack_technique', block, { form: standaloneForm });
       }
+    }
+    // Email addresses (tl-candidates-v73): one `email` candidate per address,
+    // including the publisher's defanged spellings ("alex@x[.]ink",
+    // "a[@]b[.]com", "a [at] b.com"). Its domain is still read below as the
+    // address's email-domain occurrence (unchanged). An address inside a URL
+    // ("?email=a@a.com") belongs to the URL; "git@host:org/repo" (an SSH remote)
+    // and "pkg@1.2.3" (a package specifier) are not addresses.
+    for (const m of text.matchAll(EMAIL_SCAN_RE)) {
+      const start = m.index;
+      const end = start + m[0].length;
+      if (insideAnySpan(urlSpans, start, end)) continue;
+      if (/^:[^\s]/.test(text.slice(end, end + 2))) continue;
+      if (start > 0 && /[/@:]/.test(text[start - 1])) continue;
+      // A forged sender ("sent as Boots <hello[@]boots[.]com>, impersonating
+      // the retailer", "spoofed From: …") names the impersonated brand's
+      // address, not one the actor controls: prose context only, never a row.
+      // A line that holds only the address (a bullet of an IOC list) is a row
+      // of that list, the way a bare domain line is (isObservableRow does not
+      // know address lines).
+      const lineStart = text.lastIndexOf('\n', start) + 1;
+      const lineEndAt = text.indexOf('\n', end);
+      // A paragraph that is only an address is an author signature, not a row
+      // (same rule as isBareObfuscatedEmailParagraph for its domain).
+      const bareLine = (block.type === 'list' || block.type === 'list_item') &&
+        /^\s*(?:[-*•·▪]\s*)?$/.test(text.slice(lineStart, start)) &&
+        /^[\s,;.]*$/.test(text.slice(end, lineEndAt < 0 ? text.length : lineEndAt));
+      const rowForm = isRow || bareLine ? OCCURRENCE_FORMS.LIST_ROW : OCCURRENCE_FORMS.STANDALONE;
+      const spoofed = rowForm !== OCCURRENCE_FORMS.LIST_ROW && SPOOFED_SENDER_RE.test(sentenceAround(text, start, end));
+      add(m[0], 'email', block, {
+        form: rowForm,
+        originalValue: m[0].trim(),
+        ...(spoofed ? { referenceCell: true, typingReason: 'spoofed_sender' } : {})
+      });
     }
     for (const m0 of text.matchAll(DOMAIN_RE)) {
       let m = m0;

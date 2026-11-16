@@ -14,7 +14,7 @@ import { FILE_EXT_HINT, NON_NETWORK_RESOLVED_TYPES, RESOLVED_TYPES, buildTypeRes
 import { isOnlyEmbeddedInDnsHostname } from './sourceOccurrence.js';
 import { isDescriptionColumnMention } from './tableSemantics.js';
 import { DIGEST_KINDS, NON_FILE_DIGEST_KINDS, classifyHexDigest, coreferencedObjectDigest } from './digestSemantics.js';
-import { samePublisherHostFamily, surroundingWindow, URL_SCHEME_PREFIX_RE, markTruncatedUrlDuplicates, MAX_TABLE_ROWS_PER_CANDIDATE, OCCURRENCE_FORMS, annotatedDigestWindow, locateInBlockText, HASH_CANDIDATE_TYPES, MIN_TRUNCATED_DIGEST_PREFIX, candidateKey, digestColumnHeader } from './candidateHelpers.js';
+import { samePublisherHostFamily, surroundingWindow, URL_SCHEME_PREFIX_RE, markTruncatedUrlDuplicates, MAX_TABLE_ROWS_PER_CANDIDATE, OCCURRENCE_FORMS, annotatedDigestWindow, locateInBlockText, HASH_CANDIDATE_TYPES, MIN_TRUNCATED_DIGEST_PREFIX, candidateKey, digestColumnHeader, malwareConfigSlotKey } from './candidateHelpers.js';
 
 /**
  * @param {{
@@ -29,6 +29,7 @@ export function createCandidateAccumulator(ctx) {
     typeDiag, explicitTableAssertions, referenceColumnValues, noteRejectedToken, extractionVersion,
     objectIdentifiers
   } = ctx;
+  const malwareConfigLeadIns = ctx.malwareConfigLeadIns instanceof Map ? ctx.malwareConfigLeadIns : new Map();
   /** @type {Map<string, object>} */
   const byKey = new Map();
   const urlPathBasenames = new Set();
@@ -74,7 +75,13 @@ export function createCandidateAccumulator(ctx) {
     const rowShape = !emailPart && !structuralRow && !descriptionCellMention && text ? isIndicatorRowShape(text, focus || focusValue) : false;
     const located = locateInBlockText(block?.text, focus || focusValue);
     const tableOrdinal = block?.type === 'table' ? tableOrdinals.get(block?.id) : undefined;
+    // A value in a slot of a malware configuration the publisher recovered
+    // from a sample (tl-candidates-v73): evidence for an analyst promotion,
+    // never membership.
+    const configLeadIn = !emailPart && form === OCCURRENCE_FORMS.STANDALONE ? malwareConfigLeadIns.get(block?.id) : undefined;
+    const configKey = configLeadIn ? malwareConfigSlotKey(block?.text, focus || focusValue, located) : null;
     return {
+      ...(configKey ? { malware_config_key: configKey, malware_config_lead_in: configLeadIn.slice(0, 300) } : {}),
       ...(located ? { char_start: located.start, char_end: located.end } : {}),
       ...(Number.isInteger(tableOrdinal) ? { table_index: tableOrdinal } : {}),
       ...(extra.tableRow && Number.isInteger(extra.tableRow.column_index) ? { table_column: extra.tableRow.column_index } : {}),

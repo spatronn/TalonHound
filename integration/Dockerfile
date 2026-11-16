@@ -53,6 +53,7 @@ COPY backend/lib/fileArtifactDualWriteDiagnostics.js ./lib/fileArtifactDualWrite
 COPY backend/lib/customThreatFeedFingerprint.js ./lib/customThreatFeedFingerprint.js
 COPY backend/lib/customThreatFeedWorkerAudit.js ./lib/customThreatFeedWorkerAudit.js
 COPY backend/lib/observable-normalization.js ./lib/observable-normalization.js
+COPY backend/lib/emailObservable.js ./lib/emailObservable.js
 COPY backend/lib/feedFormatter.js ./lib/feedFormatter.js
 COPY backend/lib/integrationQueueConfig.js ./lib/integrationQueueConfig.js
 COPY backend/lib/integrationQueueRecovery.js ./lib/integrationQueueRecovery.js

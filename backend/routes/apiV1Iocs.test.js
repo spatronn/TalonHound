@@ -303,7 +303,7 @@ test('invalid type/value return structured validation errors', async () => {
   const app = makeApp(createPool(keys));
   const badType = await req(app, 'POST', '/api/v1/iocs', {
     token: keys.iocRaw,
-    body: { type: 'email', value: 'a@b.c' }
+    body: { type: 'mutex', value: 'a@b.c' }
   });
   assert.equal(badType.status, 400);
   assert.equal(badType.json.error.code, 'INVALID_IOC_TYPE');

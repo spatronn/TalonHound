@@ -8,6 +8,10 @@
 import { isIPv6 } from 'node:net';
 import { domainToASCII } from 'node:url';
 import { normalizeObservable } from '../observable-normalization.js';
+import { parseEmailObservable, refangEmail } from '../emailObservable.js';
+
+/** One `local@domain` token (no path, no second at-sign). */
+const EMAIL_SHAPE_RE = /^[^\s@/:]+@[^\s@/:]+$/;
 import { normalizeIpAddress, isValidIpAddress, validatePublicIp } from '../publicIp.js';
 import { inferExactHashType, normalizeHashValue } from '../fileArtifacts/hashNormalize.js';
 import { inferObservableType } from '../manualIocCreate.js';
@@ -159,6 +163,24 @@ export function normalizeCandidateValue(raw, hintType = null) {
       normalizedValue: refanged.toUpperCase(),
       isIoc: false
     };
+  }
+  // An email address (tl-candidates-v73): one `email` candidate with the IOC
+  // layer's canonical identity. A package specifier ("axios@1.14.1"), a git
+  // remote or a user@host shorthand is not an address and falls through.
+  if (hintType === 'email' || EMAIL_SHAPE_RE.test(refangEmail(raw))) {
+    const email = parseEmailObservable(raw);
+    if (email.ok) {
+      return {
+        ok: true,
+        candidateType: 'email',
+        originalValue: String(raw).trim(),
+        normalizedValue: email.value,
+        isIoc: true,
+        resolvedType: 'email',
+        typingReason: 'email_syntax'
+      };
+    }
+    if (hintType === 'email') return { ok: false, error: 'invalid_email' };
   }
   if (hintType === 'attack_technique' || /^T\d{4}(?:\.\d{3})?$/i.test(refanged)) {
     return {

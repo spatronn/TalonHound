@@ -25,8 +25,9 @@ import {
   HTML_BLOCKS_VERSION,
   parseHtml,
   summarizeObservableShapes,
-  textOf
+  accountingTextOf
 } from './htmlBlocks.js';
+import { refangTextForExtraction } from '../defang.js';
 import { extractWeixinDocument, WEIXIN_EXTRACTOR_VERSION } from './adapters/weixin.js';
 import { selectHtmlTitle } from './titleSelection.js';
 
@@ -48,7 +49,11 @@ import { selectHtmlTitle } from './titleSelection.js';
 // v12: React streaming SSR segments (`$RS` / `$RC`) are put back at their
 // placeholders before blocks are read (htmlBlocks v12).
 // v13: a <template> holding the article (Vue slot content) is read as content (htmlBlocks v13).
-export const THREAT_LIBRARY_HTML_EXTRACTOR_VERSION = 'threat_library_html_v13';
+// v14: source accounting separates the page text at every block boundary and
+// compares refanged values without trailing sentence punctuation, so a value
+// the document kept is never reported as an unaccounted region (35944);
+// blocks are unchanged.
+export const THREAT_LIBRARY_HTML_EXTRACTOR_VERSION = 'threat_library_html_v14';
 // Structured fallback v5: the fallback reads blocks with htmlBlocks too, but its
 // id stayed at v4 through htmlBlocks v7–v12, so fallback documents never went
 // stale and Refresh never re-read them (35888: React streaming SSR rows). From
@@ -224,9 +229,12 @@ function buildSourceAccounting(dom, chosen) {
   const regions = [...(chosen.dropped || [])];
   const body = findElement(dom, (el) => tagOf(el) === 'body') || dom;
   const kept = new Set();
-  const keptText = (chosen.blocks || []).map((b) => String(b.text || '')).join('\n').toLowerCase();
-  const outside = summarizeObservableShapes(textOf(body));
-  for (const sample of outside.samples) if (!keptText.includes(sample.toLowerCase())) kept.add(sample);
+  const keptText = accountingKey((chosen.blocks || []).map((b) => String(b.text || '')).join('\n'));
+  const outside = summarizeObservableShapes(accountingTextOf(body));
+  for (const sample of outside.samples) {
+    const key = accountingKey(sample).replace(ACCOUNTING_TRAILING_PUNCT_RE, '');
+    if (key && !keptText.includes(key)) kept.add(sample);
+  }
   if (kept.size) {
     regions.push({
       region_kind: 'outside_content_root',
@@ -240,6 +248,19 @@ function buildSourceAccounting(dom, chosen) {
     });
   }
   return { version: 1, dropped_regions: compactDroppedRegions(regions) };
+}
+
+/** Sentence punctuation the page wrote after a value ("… mycartpanda[.]com."). */
+const ACCOUNTING_TRAILING_PUNCT_RE = /[.,;:!?'"’”)]+$/;
+
+/**
+ * Comparison form for source accounting: one spelling for a value however the
+ * page fanged it, so "reviewerpressus.mycartpanda[.]com" kept in a block
+ * accounts for the page token "mycartpanda[.]com." (35944).
+ * @param {string} text
+ */
+function accountingKey(text) {
+  return refangTextForExtraction(String(text || '')).toLowerCase();
 }
 
 const CONTENT_ROOT_HINT_RE = /(article-body|post-content|entry-content|article_content|content-body|story-body|main-content|wp-block-post-content)/i;

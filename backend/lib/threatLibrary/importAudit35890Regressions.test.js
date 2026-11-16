@@ -1,5 +1,5 @@
 /**
- * Import audit 35890–35901 regressions (threat_library_html_v13,
+ * Import audit 35890–35901 regressions (threat_library_html_v14,
  * threat_library_pdf_v9, tl-candidates-v69, tl-section-tree-v21,
  * tl-quality-v17, tl-published-at-v6).
  *
@@ -61,10 +61,10 @@ function runHtml(html, url = SOURCE) {
 }
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v72');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v73');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v22');
-  assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v13');
-  assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v13');
+  assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v14');
+  assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v14');
   assert.equal(PDF_LAYOUT_VERSION, 'threat_library_pdf_v9');
   assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v17');
   assert.equal(PUBLICATION_DATE_EXTRACTOR_VERSION, 'tl-published-at-v7');

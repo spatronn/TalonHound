@@ -6,6 +6,7 @@ const TYPE_ALIASES = new Map([
   ['ipv6', 'ip'],
   ['domain', 'domain'],
   ['url', 'url'],
+  ['email', 'email'],
   ['file_hash', 'file_hash'],
   ['hash', 'file_hash'],
   ['md5', 'file_hash'],
@@ -32,8 +33,8 @@ export function parseIocExportQuery(query = {}) {
   let observableType = null;
   if (typeRaw) {
     observableType = TYPE_ALIASES.get(typeRaw) || typeRaw;
-    if (!['ip', 'domain', 'url', 'file_hash'].includes(observableType)) {
-      return { ok: false, message: 'type must be ip, domain, url, or file_hash' };
+    if (!['ip', 'domain', 'url', 'file_hash', 'email'].includes(observableType)) {
+      return { ok: false, message: 'type must be ip, domain, url, file_hash, or email' };
     }
   }
 

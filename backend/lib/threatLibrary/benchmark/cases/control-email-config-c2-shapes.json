@@ -1,0 +1,45 @@
+{
+  "id": "control-email-config-c2-shapes",
+  "title": "Control: email IOC rows and lists, prose / spoofed / vendor / redacted addresses, package specifiers, template URL in an email table, decrypted malware configuration",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": ["control", "post_finalization_remediation", "email", "spoofed_sender", "package_specifier", "template_url", "malware_configuration", "mode_a"],
+  "source": {
+    "kind": "html_file",
+    "path": "control-email-config-c2-shapes.html",
+    "url": "https://research.example/blog/email-config-control/"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed from the post-finalization remediation shapes: 35946 / 35948 / 35955 IOC tables with 'Email address' rows, 35943 'Emails associated with this activity' IOC-section list, 35956 prose 'attacker-controlled ProtonMail address', 33348 spoofed brand sender, 35441 vendor contact address, 35661 redacted extortion contact, 35956 npm package specifiers, 35590 template URL row in a table that also holds email rows, and the 35951 Winos4.0 decrypted configuration (with an example-format negative)",
+      "verified_by": "construction + manual comparison with each publisher article",
+      "verified_at": "2026-11-16",
+      "notes": "An address the publisher lists (IOC table row / IOC-section bullet) is an Indicator. An address in prose — even an attacker-controlled one — is context the analyst may promote; a spoofed sender and a vendor contact are context; a redacted address and a package specifier are not observables. The decrypted-configuration C2 is report context for membership (promotion evidence only), and the example-format slot is never evidence."
+    },
+    "indicators": [
+      { "type": "email", "value": "alex@hr.trixauvex-demo.ink", "assertion": "explicit" },
+      { "type": "email", "value": "c.laurent.demo@proton.me", "assertion": "explicit" },
+      { "type": "email", "value": "recruiter.contoso-talent@gmail.com", "assertion": "explicit" },
+      { "type": "email", "value": "hr-desk-4471@gmail.com", "assertion": "explicit" },
+      { "type": "url", "value": "https://mail.owa-demo-host.com/owa/auth/logon.aspx?uid=", "assertion": "explicit" },
+      { "type": "domain", "value": "owa-demo-host.com", "assertion": "explicit" }
+    ],
+    "context_only": [
+      { "type": "email", "value": "ifstap@proton.me" },
+      { "type": "email", "value": "payroll@contoso-retail.com" },
+      { "type": "email", "value": "intel-desk@research-vendor-demo.com" },
+      { "type": "domain", "value": "cfg-c2-node.club" }
+    ],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      { "type": "domain", "value": "proton.me" },
+      { "type": "domain", "value": "gmail.com" },
+      { "type": "domain", "value": "contoso-retail.com" },
+      { "type": "domain", "value": "example-slot.club" },
+      { "type": "email", "value": "plain-crypto-js@4.2.1" },
+      { "type": "email", "value": "axios@1.14.1" },
+      { "type": "email", "value": "e*******7@proton.me" }
+    ],
+    "sections": []
+  }
+}

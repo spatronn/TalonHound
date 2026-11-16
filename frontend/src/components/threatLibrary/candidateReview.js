@@ -634,7 +634,8 @@ export const TYPE_FILTERS = Object.freeze([
   { id: 'domain', label: 'Domain' },
   { id: 'url', label: 'URL' },
   { id: 'hash', label: 'Hash' },
-  { id: 'cidr', label: 'CIDR' }
+  { id: 'cidr', label: 'CIDR' },
+  { id: 'email', label: 'Email' }
 ]);
 
 export const RESULT_FILTERS = Object.freeze([
@@ -760,7 +761,7 @@ export function serializeReviewTableUrlState(state) {
 }
 
 /** Observable types that can be stored as IOC records (backend CREATABLE_IOC_TYPES). */
-const PROMOTABLE_TYPES = new Set(['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256', 'cidr']);
+const PROMOTABLE_TYPES = new Set(['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256', 'cidr', 'email']);
 
 const lower = (v) => String(v || '').toLowerCase();
 

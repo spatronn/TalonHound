@@ -5827,9 +5827,9 @@ function FeedIntegrationMultiSelect({ ui, options, value, onChange }) {
   );
 }
 
-const FEED_IOC_TYPE_OPTIONS = ['ip', 'domain', 'url', 'hash'];
+const FEED_IOC_TYPE_OPTIONS = ['ip', 'domain', 'url', 'hash', 'email'];
 
-/** Fixed 4-value enum multi-select — chips + checkbox panel (matches ThreatActor pattern). */
+/** Fixed 5-value enum multi-select — chips + checkbox panel (matches ThreatActor pattern). */
 function FeedIocTypeMultiSelect({ ui, value, onChange, errorId }) {
   const selected = Array.isArray(value) ? value.filter((t) => FEED_IOC_TYPE_OPTIONS.includes(t)) : [];
   const linkBtn = {
@@ -19593,16 +19593,20 @@ function IOCAddPage() {
     const url = /^(https?:\/\/)[^\s/$.?#].[^\s]*$/i;
     const hash = /^(?:[A-Fa-f0-9]{32}|[A-Fa-f0-9]{40}|[A-Fa-f0-9]{64})$/;
     const domain = /^(?=.{1,253}$)(?!-)(?:[a-zA-Z0-9-]{1,63}\.)+[a-zA-Z]{2,63}$/;
+    // UX hint only; the backend canonicalizes and validates (emailObservable.js).
+    const email = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?=.{1,253}$)(?:[A-Za-z0-9-]{1,63}\.)+[A-Za-z]{2,63}$/;
 
     if (url.test(v)) return 'url';
     if (ipv4.test(v) || ipv6.test(v)) return 'ip';
     if (hash.test(v)) return 'hash';
+    if (email.test(v)) return 'email';
     if (domain.test(v)) return 'domain';
     return 'unknown';
   }
 
   function iocTypeStyle(type) {
     const map = {
+      email: { color: '#fbbf24', border: '#d97706', bg: 'rgba(217,119,6,0.16)' },
       url: { color: '#60a5fa', border: '#2563eb', bg: 'rgba(37,99,235,0.15)' },
       domain: { color: '#22d3ee', border: '#0891b2', bg: 'rgba(8,145,178,0.18)' },
       ip: { color: '#34d399', border: '#059669', bg: 'rgba(5,150,105,0.18)' },

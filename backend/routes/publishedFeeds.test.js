@@ -177,7 +177,7 @@ describe('publishedFeeds ioc_types API', () => {
 
     const bad = await req(app, 'POST', '/api/published-feeds', { name: 'X', ioc_types: ['mutex'] });
     assert.equal(bad.status, 400);
-    assert.match(bad.body.message, /ip, domain, url, or hash/);
+    assert.match(bad.body.message, /ip, domain, url, hash, or email/);
   });
 
   it('treats a feed with no filter_mode as basic on read', async () => {

@@ -727,6 +727,87 @@ export function valueLineLeadInsByBlock(blocks) {
   return out;
 }
 
+/**
+ * A lead-in that presents the next block as a configuration the publisher
+ * recovered from a malware sample ("The malware's configuration, once
+ * decrypted, is as follows:", "Decrypting with <key> recovers the campaign
+ * configuration in full:").
+ */
+export const MALWARE_CONFIG_LEAD_IN_RE =
+  /\b(?:decrypt(?:ed|s|ing)?|decod(?:ed|es|ing)|extract(?:ed|s|ing)?|deobfuscat(?:ed|es|ing)|unpack(?:ed|s|ing)|recover(?:ed|s|ing)?|hard-?coded|embedded)\b[^.:;]{0,80}\bconfig(?:uration)?s?\b|\bconfig(?:uration)?s?\b[^.:;]{0,80}\b(?:once\s+(?:decrypted|decoded)|after\s+(?:decryption|decoding|decrypting)|(?:is|was|are|were)\s+(?:decrypted|decoded|extracted))\b/i;
+/**
+ * The lead-in shows an illustration of the format (example, structure,
+ * template, default), or calls its values benign — not the values of the
+ * analyzed sample.
+ */
+export const MALWARE_CONFIG_LEAD_IN_NEGATIVE_RE =
+  /\b(?:examples?|e\.g\.|for\s+instance|template|format|structure|schema|layout|defaults?|placeholders?|redacted|legitimate|benign|clean|decoy|test(?:ing)?)\b/i;
+const LAST_SENTENCE_RE = /(?:^|[.!?]\s+)([^.!?]*(?:\.(?=\S)[^.!?]*)*:\s*)$/;
+
+/**
+ * block id → lead-in of a malware configuration dump: the paragraph right
+ * before a paragraph / code block, when its last sentence ends with a colon
+ * and presents a configuration recovered from a sample (tl-candidates-v73).
+ * Recorded on occurrences only; it never changes the relation or membership —
+ * it is evidence an analyst promotion can rest on.
+ * @param {object[]} blocks
+ */
+export function malwareConfigLeadInsByBlock(blocks) {
+  const out = new Map();
+  const list = Array.isArray(blocks) ? blocks : [];
+  for (let i = 0; i + 1 < list.length; i += 1) {
+    const b = list[i];
+    const next = list[i + 1];
+    if (b?.type !== 'paragraph') continue;
+    if (next?.type !== 'paragraph' && next?.type !== 'code') continue;
+    const t = String(b.text || '').trim();
+    const m = LAST_SENTENCE_RE.exec(t);
+    const sentence = m ? m[1].trim() : '';
+    if (!sentence || sentence.length > 300) continue;
+    if (!MALWARE_CONFIG_LEAD_IN_RE.test(sentence) || MALWARE_CONFIG_LEAD_IN_NEGATIVE_RE.test(sentence)) continue;
+    out.set(next.id, sentence);
+  }
+  return out;
+}
+
+/** `key: value` / `key=value` / `"key": "value"` slots of a configuration dump. */
+const CONFIG_SLOT_RE = /(?:^|[|;,{\s])["']?[A-Za-z_][\w.-]{0,31}["']?\s*[:=]\s*\S/g;
+/** The key immediately before a value: `A1:`, `"host": "`, `C2_URL = '`. */
+const CONFIG_SLOT_KEY_BEFORE_RE = /(?:^|[|;,{\s])["']?([A-Za-z_][\w.-]{0,31})["']?\s*[:=]\s*["']?$/;
+/** Keys of a configuration that name a network destination of the implant. */
+export const CONFIG_NETWORK_KEY_RE =
+  /(?:c2|cnc|c&c|host|server|srv|domain|addr|address|ip|url|uri|gate|panel|endpoint|callback|beacon|backup|fallback|primary|secondary|relay|login)/i;
+/** Keys whose value is not the implant's own destination (connectivity probe, decoy, update or time server). */
+export const CONFIG_NON_C2_KEY_RE =
+  /(?:check|test|probe|ping|ntp|update|referr?er|user.?agent|^ua$|decoy|legit|benign|proxy|mutex)/i;
+
+/**
+ * The configuration key a value sits under inside a configuration dump, when
+ * the block is a dump (at least three `key: value` slots) and the value
+ * directly follows a key. The key must name a network destination unless the
+ * publisher defanged the value (a publisher marks its malicious values that
+ * way); a probe / decoy / update key never qualifies.
+ * @param {string} text block text
+ * @param {string} rawValue the value as the block spells it
+ * @param {{ start: number, end: number }|null} located
+ * @returns {string|null}
+ */
+export function malwareConfigSlotKey(text, rawValue, located) {
+  const hay = String(text || '');
+  if (!hay || !located) return null;
+  const slots = hay.match(CONFIG_SLOT_RE) || [];
+  if (slots.length < 3) return null;
+  const before = hay.slice(Math.max(0, located.start - 48), located.start);
+  const m = CONFIG_SLOT_KEY_BEFORE_RE.exec(before);
+  if (!m) return null;
+  const key = m[1];
+  if (CONFIG_NON_C2_KEY_RE.test(key)) return null;
+  const spelled = hay.slice(located.start, located.end) || String(rawValue || '');
+  const defanged = /\[\.\]|\(\.\)|\{\.\}|\[dot\]|\[:\]|\bhxxps?\b/i.test(spelled);
+  if (!defanged && !CONFIG_NETWORK_KEY_RE.test(key)) return null;
+  return key.slice(0, 32);
+}
+
 /** A list assignment in a hunting query / code sample: `let c2ip = dynamic([`, `deliveryHosts = [`. */
 export const CODE_LIST_ASSIGN_RE = /\b(?:let\s+|var\s+|const\s+|set\s+)?([A-Za-z_][\w]*)\s*=\s*(?:dynamic\s*\(\s*)?\[/g;
 

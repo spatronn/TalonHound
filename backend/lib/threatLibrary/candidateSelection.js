@@ -27,7 +27,7 @@ export const SELECTION_TABS = Object.freeze([
 ]);
 export const SELECTION_SOURCES = Object.freeze(['all', 'original', 'linked', 'linked_only']);
 export const SELECTION_MATCHES = Object.freeze(['all', 'existing', 'new']);
-export const SELECTION_TYPES = Object.freeze(['all', 'ip', 'domain', 'url', 'hash', 'cidr']);
+export const SELECTION_TYPES = Object.freeze(['all', 'ip', 'domain', 'url', 'hash', 'cidr', 'email']);
 export const SELECTION_RESULTS = Object.freeze([
   'all', 'created', 'already_existing', 'unsupported', 'not_created'
 ]);
@@ -40,7 +40,7 @@ const RESULT_SET = new Set(SELECTION_RESULTS);
 const PRIMARY_SCOPE_TABS = new Set(['total_unique', 'needs_review', 'context_only', 'all']);
 const HASH_TYPES = new Set(['md5', 'sha1', 'sha256']);
 const IP_TYPES = new Set(['ip', 'ipv6']);
-const PROMOTABLE_TYPES = new Set(['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256']);
+const PROMOTABLE_TYPES = new Set(['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256', 'email']);
 const MAX_EXCLUSIONS = 10000;
 const MAX_SEARCH = 200;
 const TOKEN_RE = /^[a-f0-9]{64}$/;

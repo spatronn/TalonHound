@@ -14,7 +14,7 @@
       "method": "constructed from import audit 35890-35901 P1 shapes: 35895 prose declaration beside a curated C2 table; 35899 infection-traffic URL with a trailing '<--' comment and an obfuscated author address after a signature rule; 35892/35900 publisher placeholder URLs (<rig>, <method>, <linkid:8>); and the Kong RAT beacon form '?log=<data>' whose published prefix is the documented endpoint",
       "verified_by": "construction",
       "verified_at": "2026-11-14",
-      "notes": "A letter/hyphen query slot after '=' keeps the published URL prefix (matching semantics: a documented path whose parameter value is filled at runtime, including '?log=<data>' and '?id=<target-email-address>'). Mid-token placeholders and colon/digit placeholders are templates, not Indicators. A hunting-query code block and a negated 'are not indicators' sentence do not declare Indicators."
+      "notes": "A letter/hyphen query slot after '=' keeps the published URL prefix (matching semantics: a documented path whose parameter value is filled at runtime, including '?log=<data>' and '?id=<target-email-address>'). Mid-token placeholders and colon/digit placeholders are templates, not Indicators. A hunting-query code block and a negated 'are not indicators' sentence do not declare Indicators. Email added 2026-11-16 (email became a first-class IOC type, tl-candidates-v73): the defanged address bullet of the Indicators list is a publisher row (it was unrepresentable before, not a label change); the author signature address and the spoofed brand sender stay context."
     },
     "indicators": [
       { "type": "domain", "value": "db-connectors.vercel.app", "assertion": "explicit" },
@@ -27,10 +27,12 @@
       { "type": "url", "value": "http://157.20.241.16:8080/jup.sh", "assertion": "explicit" },
       { "type": "url", "value": "https://kkwinapp.oss-cn-hongkong.aliyuncs.com/dow/upload?log=", "assertion": "explicit" },
       { "type": "url", "value": "https://unityprogressall.org/imagecontent/getimgcontent.php?id=", "assertion": "explicit" },
-      { "type": "domain", "value": "quill-kraee-um2gf.pro", "assertion": "explicit" }
+      { "type": "domain", "value": "quill-kraee-um2gf.pro", "assertion": "explicit" },
+      { "type": "email", "value": "brahma2023@onionmail.org", "assertion": "explicit" }
     ],
     "context_only": [
-      { "type": "domain", "value": "malware-traffic-analysis.net" }
+      { "type": "domain", "value": "malware-traffic-analysis.net" },
+      { "type": "email", "value": "hello@boots.com" }
     ],
     "excluded_legitimate": [],
     "not_indicators": [
@@ -39,6 +41,7 @@
       { "type": "domain", "value": "telemetry.vendor-cloud.net" },
       { "type": "domain", "value": "not-an-indicator.vendor.net" },
       { "type": "domain", "value": "boots.com" },
+      { "type": "email", "value": "brad@malware-traffic-analysis.net" },
       { "type": "url", "value": "http://157.20.241.16:8080/ob/cronhit?h=jup_start_" },
       { "type": "url", "value": "https://securedoc.example.workers.dev/?id=%3Clinkid:8%3E" },
       { "type": "url", "value": "https://securedoc.example.workers.dev/h?id=%3Clinkid:8%3E" }

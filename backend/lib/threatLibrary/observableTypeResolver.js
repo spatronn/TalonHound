@@ -26,6 +26,7 @@
  * ZH); structure (typed table rows, indicator lists) works for any language.
  */
 
+import { parseEmailObservable } from '../emailObservable.js';
 import { parse as parseDomainSuffix } from 'tldts';
 import { refangObservable } from './defang.js';
 import { isValidIpAddress } from '../publicIp.js';
@@ -135,7 +136,7 @@ export const NON_NETWORK_RESOLVED_TYPES = Object.freeze(
 );
 
 /** Candidate types that can be reviewed / matched / created as IOC records. */
-export const NETWORK_IOC_TYPES = Object.freeze(new Set(['ip', 'ipv6', 'cidr', 'domain', 'url', 'md5', 'sha1', 'sha256']));
+export const NETWORK_IOC_TYPES = Object.freeze(new Set(['ip', 'ipv6', 'cidr', 'domain', 'url', 'md5', 'sha1', 'sha256', 'email']));
 
 /**
  * @param {string} type
@@ -1246,6 +1247,8 @@ export function validateCanonicalIocValue(type, value) {
     case 'sha1':
     case 'sha256':
       return HASH_RE[t].test(v.toLowerCase()) ? { ok: true, reason: 'valid_hash' } : { ok: false, reason: 'invalid_hash' };
+    case 'email':
+      return parseEmailObservable(v).ok ? { ok: true, reason: 'email_syntax' } : { ok: false, reason: 'invalid_email' };
     default:
       return { ok: false, reason: 'unsupported_ioc_type' };
   }

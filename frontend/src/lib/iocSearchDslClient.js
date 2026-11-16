@@ -19,7 +19,7 @@ export const ATTR_OPERATORS = ['equals'];
 export const SEARCH_FIELDS = [
   { name: 'ioc', label: 'IOC', kind: 'text', operators: TEXT_OPERATORS },
   // True IOC identity types only — imphash/tlsh/ssdeep are separate artifact-attribute fields below.
-  { name: 'type', label: 'Type', kind: 'enum', operators: ENUM_OPERATORS, values: ['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256'] },
+  { name: 'type', label: 'Type', kind: 'enum', operators: ENUM_OPERATORS, values: ['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256', 'email'] },
   { name: 'known_hash_type', label: 'Known hash type', kind: 'enum', operators: ENUM_OPERATORS, values: ['md5', 'sha1', 'sha256'] },
   // Exact hash lookup: matches a direct hash IOC or a file artifact's known hashes,
   // resolved to the canonical (SHA256) file-hash IOC on the backend.

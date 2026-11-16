@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head><title>Email and decrypted-configuration control</title></head>
+<body>
+<article>
+<h1>Email and decrypted-configuration control</h1>
+<p>The actor phished developers from look-alike recruiter mailboxes. The compromised maintainer account email was changed to ifstap@proton[.]me, an attacker-controlled ProtonMail address.</p>
+<p>The lure was sent as Contoso Payroll &lt;payroll[@]contoso-retail[.]com&gt;, spoofing the retailer's payroll team.</p>
+<p>The dropper was installed with npm install plain-crypto-js@4.2.1 and pinned axios@1.14.1.</p>
+
+<h2>Malware analysis</h2>
+<p>We observed a new variation of the loader. The malware's configuration, once decrypted, is as follows:</p>
+<p>|A16A6736FB5DC030EF3|A1:cfg-c2-node[.]club|o1:7880|t1:1|S2:cfg-c2-node[.]club|o2:7881|t2:1|dd:10|cl:30|</p>
+<p>An example of the configuration format is shown below:</p>
+<p>|A1:example-slot.club|o1:7880|t1:1|dd:10|cl:30|</p>
+
+<h2>Indicators of compromise</h2>
+<p>Emails associated with this activity:</p>
+<ul>
+  <li>recruiter.contoso-talent@gmail[.]com</li>
+  <li>hr-desk-4471@gmail[.]com</li>
+</ul>
+<table>
+  <thead><tr><th>Indicator</th><th>Type</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td>alex@hr.trixauvex-demo[.]ink</td><td>Email address</td><td>Attacker-controlled email address</td></tr>
+    <tr><td>c.laurent.demo@proton[.]me</td><td>Email address</td><td>Actor-controlled sender address</td></tr>
+    <tr><td>e*******7[@]proton[.]me</td><td>Email address</td><td>Extortion contact (redacted)</td></tr>
+    <tr><td>hxxps://mail.owa-demo-host[.]com/owa/auth/logon.aspx?uid=&lt;target_specific_uuid&gt;</td><td>URL</td><td>OWA credential phishing URL format</td></tr>
+    <tr><td>owa-demo-host[.]com</td><td>Domain</td><td>Credential phishing host</td></tr>
+  </tbody>
+</table>
+<p>If you are tracking this activity, contact our team at intel-desk@research-vendor-demo.com.</p>
+</article>
+</body>
+</html>

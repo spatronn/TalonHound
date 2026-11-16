@@ -186,7 +186,7 @@ export function registerMcpTools(server, deps) {
         + ' Read-only: returns persisted TalonHound data and never triggers external/paid enrichment.',
       inputSchema: {
         value: z.string().min(1).max(config.valueMaxChars).describe('IOC value (IP, domain, URL, or hash)'),
-        type: z.enum(['ip', 'domain', 'url', 'hash']).optional().describe('Optional explicit IOC type')
+        type: z.enum(['ip', 'domain', 'url', 'hash', 'email']).optional().describe('Optional explicit IOC type')
       },
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
     },
@@ -212,7 +212,7 @@ export function registerMcpTools(server, deps) {
       inputSchema: {
         query: z.string().min(1).max(config.valueMaxChars).optional()
           .describe('Search DSL (e.g. type equals "domain") or plain text (bounded IOC value search)'),
-        type: z.enum(['ip', 'domain', 'url', 'hash']).optional().describe('Filter by IOC type'),
+        type: z.enum(['ip', 'domain', 'url', 'hash', 'email']).optional().describe('Filter by IOC type'),
         classification: z.string().max(128).optional().describe('Filter by threat classification (slug or label)'),
         source: z.string().max(128).optional().describe('Filter by IOC Source name'),
         limit: z.number().int().min(1).max(config.searchPageMax).optional(),
@@ -233,7 +233,7 @@ export function registerMcpTools(server, deps) {
         + 'sources / historical_sources / evidence_sources and first_seen / last_seen / imported_at (+ *_provenance) (same semantics as lookup_ioc), and — kept separate under `source_intelligence` so provenance is never ambiguous — the source/feed-provided feed_tags, feed_classifications, and parsed malware/family/threat_type labels. When the credential has mcp:enrichment:read, `enrichment` carries every stored *direct* enrichment result applicable to the IOC type (VirusTotal, and for IP IOCs also IPinfo/AbuseIPDB/Spamhaus DROP; for domain/URL also RDAP when stored). For URL IOCs, VirusTotal `summary.web_analysis` adds normalized web signals when present (targeted_brand, behavior_tags, http, content_sha256, redirection_chain, bounded outgoing_links, categories) — derived from stored enrichment only, never a live VirusTotal call. For URL IOCs whose host is an IP literal, `derived_infrastructure` mirrors the UI Derived Infrastructure panel: extracted_host plus stored IPinfo/AbuseIPDB/Spamhaus for that host — without treating the host as a registered IOC. A provider appears only when a stored result exists. Returns previously persisted enrichment only — it NEVER triggers external/paid enrichment; to refresh, call enrich_ioc explicitly (requires mcp:enrichment:write) and read this again once the job finishes. `threat_context` (always present) carries the Threat Library Threat Context shown on IOC Details: `claims` (role, assessment, confidence, evidence_text, section, page_number, occurrence_count, occurrences[≤5: zone, section_heading, page, form, surrounding_text — where THIS IOC appears in the report, in document order], report {id, title, published_at, published_date, published_at_precision, published_at_source, created_at, tlp, tlp_display, source_name, source_type, summary, entities[≤20: id, entity_type, name, description]}) — published_at/published_date = when the ORIGINAL source was published (published_date is the calendar day the source stated; precision `date` means no time is known, so never treat 00:00 as a real time), created_at = when TalonHound imported it; claims are ordered by publication date (newest first, unknown last) then import date and `relationships` from persisted, non-deleted threat reports linked to this IOC — read from stored Threat Library data only, never re-fetched or re-analyzed. Empty arrays mean no linked report. Evidence precedence, strongest first: explicit relationship > IOC-specific claim > IOC-specific occurrence > report summary > report-level entity. Report-level entities are co-mentioned in the same report and do not imply a direct relationship with this IOC unless supported by an explicit claim, relationship, or IOC-specific occurrence evidence; a report title or entity name alone never attributes the IOC to an actor, malware, or C2 role. Discover the Malware Families catalog with list_malware_families.',
       inputSchema: {
         value: z.string().min(1).max(config.valueMaxChars).optional(),
-        type: z.enum(['ip', 'domain', 'url', 'hash']).optional(),
+        type: z.enum(['ip', 'domain', 'url', 'hash', 'email']).optional(),
         id: z.union([z.string(), z.number()]).optional().describe('IOC id or public_id')
       },
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
@@ -270,7 +270,7 @@ export function registerMcpTools(server, deps) {
             z.string().min(1).max(config.valueMaxChars),
             z.object({
               value: z.string().min(1).max(config.valueMaxChars),
-              type: z.enum(['ip', 'domain', 'url', 'hash']).optional()
+              type: z.enum(['ip', 'domain', 'url', 'hash', 'email']).optional()
             })
           ])
         ).min(1).max(config.bulkLookupMax)
@@ -305,7 +305,7 @@ export function registerMcpTools(server, deps) {
             z.string().min(1).max(config.valueMaxChars),
             z.object({
               value: z.string().min(1).max(config.valueMaxChars),
-              type: z.enum(['ip', 'domain', 'url', 'hash']).optional()
+              type: z.enum(['ip', 'domain', 'url', 'hash', 'email']).optional()
             })
           ])
         ).min(1).max(config.importMax),
@@ -712,7 +712,7 @@ export function registerMcpTools(server, deps) {
       tab: z.string().min(1).max(64).optional(),
       source: z.enum(['all', 'original', 'linked', 'linked_only']).optional(),
       match: z.enum(['all', 'existing', 'new']).optional(),
-      type: z.enum(['all', 'ip', 'domain', 'url', 'hash', 'cidr']).optional(),
+      type: z.enum(['all', 'ip', 'domain', 'url', 'hash', 'cidr', 'email']).optional(),
       result: z.enum(['all', 'created', 'already_existing', 'unsupported', 'not_created']).optional(),
       search: z.string().max(200).optional()
     }).optional(),
