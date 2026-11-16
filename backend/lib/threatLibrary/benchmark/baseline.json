@@ -1,20 +1,20 @@
 {
   "versions": {
-    "candidates": "tl-candidates-v71",
+    "candidates": "tl-candidates-v72",
     "zones": "tl-zones-v20",
-    "tables": "tl-table-v20",
-    "type_resolver": "tl-type-resolver-v29",
+    "tables": "tl-table-v21",
+    "type_resolver": "tl-type-resolver-v30",
     "html": "threat_library_html_v13",
     "pdf": "threat_library_pdf_v9",
     "quality": "tl-quality-v17",
     "metrics": "tl-benchmark-metrics-v2"
   },
   "aggregate": {
-    "cases": 113,
-    "cases_exact": 111,
+    "cases": 114,
+    "cases_exact": 112,
     "indicators": {
-      "expected": 1615,
-      "tp": 1613,
+      "expected": 1625,
+      "tp": 1623,
       "fp": 0,
       "fn": 2,
       "fn_not_extracted": 0,
@@ -28,7 +28,7 @@
     "candidate_extraction_recall": 0.9994,
     "context_only_accuracy": 1,
     "legitimate_exclusion_accuracy": 1,
-    "assertion_accuracy": 0.9699,
+    "assertion_accuracy": 0.9702,
     "section_accuracy": 1,
     "non_indicators_promoted": 0,
     "ai_dependent_entries": 15,
@@ -36,9 +36,9 @@
     "quality": {
       "high": 0,
       "warning": 3,
-      "info": 28,
+      "info": 30,
       "cases_flagged": 3,
-      "exact_cases": 111,
+      "exact_cases": 112,
       "exact_cases_flagged": 3,
       "failing_cases": 2,
       "failing_cases_flagged": 0
@@ -471,6 +471,34 @@
       "assertions_checked": 11,
       "warning_codes": [
         "non_file_digest_reclassified"
+      ]
+    },
+    "control-review-queue-35935-shapes": {
+      "members": [
+        "domain:officcee404.com",
+        "domain:server09.mentality.cloud",
+        "domain:sfrclak.com",
+        "domain:syn1112223334445556667778889990.org",
+        "sha256:369479bd9a248c9448705c222d81ff1a0143343a138fc38fc0ea00f54fcc1598",
+        "sha256:7f54cf5e2beb3f1f5d2b3ba1c6a16ce1927ffecd20a9d635329b1e16cb74fb14",
+        "sha256:98442387d466f27357d727b3706037a4df12a78602b93df973b063462a677761",
+        "sha256:aba7133f975a0788dd2728b4bbb1d7d948e50571a033a1e8f47a2691e98600c5",
+        "sha256:d9832d9208b2c4a34cf5220b1ebaf11f0425cf638ac67bf4669b11c80e460f58",
+        "url:https://gooledives.z48.web.core.windows.net/%e0%a6%a8%e0%a6%bf%e0%a6%b0%e0%a7%8d%e0%a6%ac%e0%a6%be%e0%a6%9a%e0%a6%a8_%e0%a7%a8%e0%a7%a6%e0%a7%a8%e0%a7%ac.html"
+      ],
+      "tp": 10,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 10,
+      "assertions_checked": 10,
+      "warning_codes": [
+        "non_file_digest_reclassified",
+        "reference_column_values_context"
       ]
     },
     "control-streaming-ssr-fallback-root": {

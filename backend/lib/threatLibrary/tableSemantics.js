@@ -118,7 +118,7 @@ function embeddedAbsoluteUrl(token) {
  * is notation and must name the run's own length, otherwise the cell is left
  * alone.
  */
-export const TABLE_SEMANTICS_VERSION = 'tl-table-v20';
+export const TABLE_SEMANTICS_VERSION = 'tl-table-v21';
 
 /** "0x" + exactly an MD5 run, as one whole token (v19). 40 / 64 hex are EVM values. */
 export const HEX_LITERAL_DIGEST_RE = /^0x([0-9a-f]{32})$/i;
@@ -558,6 +558,8 @@ function normalizeCellText(cellText) {
   return wrapped ? wrapped[1].trim() : text;
 }
 const TRAILING_PUNCT_RE = /[,;:.，；。]+$/;
+/** A full MD5 / SHA-1 / SHA-256 followed only by footnote markers. */
+const FOOTNOTED_DIGEST_RE = /^((?:[0-9a-f]{64}|[0-9a-f]{40}|[0-9a-f]{32}))(?:\*{1,3}|[†‡§¹²³]{1,3})$/i;
 const IPV4_ONLY_RE = /^(?:\d{1,3}\.){3}\d{1,3}$/;
 
 /**
@@ -588,6 +590,11 @@ function parseToken(token, declared, ctx = {}) {
   let t = String(token || '').trim();
   // `2001:db8::` ends in colons that are part of the address, not punctuation.
   if (!isIPv6(t)) t = t.replace(TRAILING_PUNCT_RE, '');
+  // A footnote marker glued to a full digest ("<sha256>*" with "*First
+  // uploaded to VirusTotal by …" under the table) is notation, not part of
+  // the value; `raw` keeps the spelling (tl-table-v21).
+  const footnoted = FOOTNOTED_DIGEST_RE.exec(t);
+  if (footnoted) t = footnoted[1];
   if (!t) return null;
   // An MD5 the publisher wrote as a hex literal ("0xFD91…" in an IOC table):
   // the "0x" radix prefix is notation, the identity is the bare digest. Only
@@ -1148,6 +1155,59 @@ function subHeaderRowDeclarations(cells, indicatorCols) {
   return labelledIndicator ? out : null;
 }
 
+/** Key-value row labels naming a domain's registration / DNS-profile attribute. */
+const REGISTRATION_ATTRIBUTE_ROW_RE =
+  /^(?:(?:authoritative|dns|domain)\s+)?(?:name\s*servers?|nameservers?|ns\s+records?|mx(?:\s+records?)?|mail\s+exchangers?|spf(?:\s+records?)?|soa(?:\s+records?)?|registrars?(?:\s+(?:name|whois\s+server|url))?)$/;
+
+/**
+ * Values of a key-value table's registration / DNS-profile rows ("Name
+ * servers | dns1.registrar-servers.com, dns2…", "DNS SPF record | v=spf1
+ * include:spf.efwd.registrar-servers.com ~all"): the subject domain's
+ * registration provenance, never actor observables (tl-table-v21).
+ * @param {{ table?: { rows?: Array<string[]|{ cells?: string[] }> } }} block
+ * @returns {{ refanged: string, raw: string, candidate_type: string }[]}
+ */
+export function registrationAttributeRowValues(block) {
+  const out = [];
+  for (const r of block?.table?.rows || []) {
+    const cells = (Array.isArray(r) ? r : r?.cells || []).map((c) => String(c ?? '').trim());
+    const labelIndex = cells.findIndex(Boolean);
+    if (labelIndex < 0 || !REGISTRATION_ATTRIBUTE_ROW_RE.test(normalizeHeaderLabel(cells[labelIndex]))) continue;
+    for (const cell of cells.slice(labelIndex + 1)) {
+      for (const token of refangObservable(cell).split(/[\s,;]+/)) {
+        const t = token.replace(/^(?:include|a|mx|ptr|exists|redirect)[:=]/i, '').replace(/^[("'[]+|[)"'\]]+$/g, '');
+        if (!t || !t.includes('.')) continue;
+        const parsed = parseToken(t, null);
+        if (parsed?.ok && parsed.is_ioc !== false) out.push({ refanged: parsed.refanged, raw: token, candidate_type: parsed.candidate_type });
+      }
+    }
+  }
+  return out;
+}
+
+/** A cell naming a network service role ("FTP Server", "C2 server", "Exfiltration host"). */
+const ROW_NETWORK_ROLE_RE =
+  /^(?:(?:ftp|sftp|https?|web|smtp|imap|pop3|mail|ssh|dns|proxy|relay|exfil(?:tration)?|staging|download|upload|payload|c2|c&c|command[\s-]and[\s-]control|panel)\s+)+(?:servers?|hosts?|domains?|endpoints?|nodes?)$|^(?:c2|c&c)$/i;
+
+/**
+ * The row's network-role label: the single non-empty indicator-column cell
+ * that holds role text instead of an observable.
+ * @param {string[]} cells
+ * @param {{ index: number }[]} indicatorCols
+ * @returns {{ col: number, text: string }|null}
+ */
+function rowNetworkRoleLabel(cells, indicatorCols) {
+  let found = null;
+  for (const col of indicatorCols) {
+    const text = normalizeCellText(cells[col.index]);
+    if (!text || cellIsObservable(text)) continue;
+    if (!ROW_NETWORK_ROLE_RE.test(text)) return null;
+    if (found) return null;
+    found = { col: col.index, text };
+  }
+  return found;
+}
+
 function cellIsObservable(cellText) {
   const text = normalizeCellText(cellText);
   const refanged = refangObservable(joinWrappedUrlTail(text) || text);
@@ -1647,6 +1707,16 @@ export function interpretIocTable(block, opts = {}) {
       reject({ row_index: i, cells: cells.map((c) => String(c || '').trim()), values: [] }, 'request_content_type_cell');
       continue;
     }
+    // A registration / DNS-profile attribute row of a key-value table
+    // ("Property | Value" → "Name servers | dns1.registrar-servers.com, …",
+    // "DNS MX records", "Registrar") describes the subject domain's
+    // registration, not a value the publisher attributes to the actor. Its
+    // values stay Context Only provenance, like a "Resolved IP" column
+    // (tl-table-v21).
+    if (!typeCol && REGISTRATION_ATTRIBUTE_ROW_RE.test(normalizeHeaderLabel(description || ''))) {
+      reject({ row_index: i, cells: cells.map((c) => String(c || '').trim()), values: [], description }, 'registration_attribute_row');
+      continue;
+    }
     const row = {
       row_index: i,
       // Index of this row in the block's own `table.rows` (a promoted header
@@ -1661,6 +1731,11 @@ export function interpretIocTable(block, opts = {}) {
       values: []
     };
     const rejected = [];
+    // A row whose other indicator cell holds a network role instead of a
+    // value ("server09.example | FTP Server |" under "File | SHA256 |
+    // Detection name"): the publisher's own row label names what the value
+    // is, so it types the row in place of the column header (tl-table-v21).
+    const rowRoleLabel = typeCol ? null : rowNetworkRoleLabel(cells, indicatorCols);
     for (const col of indicatorCols) {
       const cell = String(cells[col.index] || '');
       if (!cell.trim()) continue;
@@ -1671,8 +1746,9 @@ export function interpretIocTable(block, opts = {}) {
       // ("Spoofed domain") keeps typing the value (tl-table-v14).
       const typeCell = typeCol ? String(cells[typeCol.index] || '').trim() : '';
       const typeCellLabels = Boolean(typeCell) && (Boolean(declaredRow) || !col.declared_type || segment !== undefined);
+      const roleLabel = rowRoleLabel && rowRoleLabel.col !== col.index && !declared ? rowRoleLabel.text : '';
       const typeLabel =
-        (typeCellLabels ? typeCell : '') || (segment !== undefined ? segment.label : col.header) || null;
+        (typeCellLabels ? typeCell : '') || roleLabel || (segment !== undefined ? segment.label : col.header) || null;
       const parsed = parseIndicatorCell(cell, declared, { typeLabel });
       for (const v of parsed.values) {
         row.values.push({

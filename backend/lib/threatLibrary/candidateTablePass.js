@@ -3,7 +3,7 @@
  */
 
 import { normalizeCandidateValue } from './candidateValue.js';
-import { parseIndicatorCell } from './tableSemantics.js';
+import { parseIndicatorCell, registrationAttributeRowValues } from './tableSemantics.js';
 import { RESOLVED_TYPES } from './observableTypeResolver.js';
 import { buildRowObservation } from './sourceObservation.js';
 import { descriptionClauseAssertsRole, tableColumnLabels, versionColumnTokens, OCCURRENCE_FORMS, HISTORICAL_RESOLUTION_ROW_RE, candidateKey, relatedValuesFromDescription } from './candidateHelpers.js';
@@ -72,6 +72,11 @@ export function readTypedTables(blocks, acc, ctx) {
             if (n?.ok) refValues.add(`${n.candidateType}:${n.normalizedValue.toLowerCase()}`);
           }
         }
+      }
+      // Registration-profile rows stay provenance in the regex passes too (tl-table-v21).
+      for (const v of registrationAttributeRowValues(block)) {
+        const n = normalizeCandidateValue(v.refanged, v.candidate_type);
+        if (n?.ok) refValues.add(`${n.candidateType}:${n.normalizedValue.toLowerCase()}`);
       }
       if (refValues.size) referenceColumnValues.set(block.id, refValues);
       continue;
@@ -346,6 +351,18 @@ export function readTypedTables(blocks, acc, ctx) {
           });
         }
       }
+    }
+    // Registration-attribute rows ("Name servers", "DNS MX records") of a
+    // key-value profile table: the subject domain's registration provenance,
+    // kept as Context Only values (tl-table-v21).
+    for (const v of registrationAttributeRowValues(block)) {
+      add(v.refanged, v.candidate_type, block, {
+        form: OCCURRENCE_FORMS.STANDALONE,
+        originalValue: v.raw,
+        referenceCell: true,
+        typingReason: 'registration_attribute_row',
+        typing: { typing_reason: 'registration_attribute_row' }
+      });
     }
     // Attribute columns (a certificate thumbprint or fuzzy hash beside the
     // sample) are never read as rows: record what their cells hold and why.

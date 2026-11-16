@@ -67,7 +67,7 @@ const members = (x) =>
     .sort();
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v71');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v72');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v22');
 });
 

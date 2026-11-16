@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head><title>Review queue 35935 control: footnoted digests, row roles, registration rows, encoded URLs</title></head>
+<body>
+<article>
+<h1>Review queue 35935 control: footnoted digests, row roles, registration rows, encoded URLs</h1>
+<p>The three encrypted payloads are decrypted at runtime using the hardcoded AES-256-GCM key: 4f7a8c3d2e1b5f9071a6b2c8d4e3f50a92b1c7d6e8f4a30b5c2d9e1f7a6b8c4d.</p>
+
+<h2>C&amp;C infrastructure analysis</h2>
+<p>The C&amp;C domain sfrclak[.]com was registered one day before the attack.</p>
+<table>
+  <thead><tr><th>Property</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td>Domain registered</td><td>March 30, 2026 16:03:46 UTC</td></tr>
+    <tr><td>Registrar</td><td>Namecheap Inc</td></tr>
+    <tr><td>Name servers</td><td>dns1.registrar-servers.com, dns2.registrar-servers.com</td></tr>
+    <tr><td>Hosting provider</td><td>Hostwinds LLC (AS54290)</td></tr>
+    <tr><td>DNS SPF record</td><td>v=spf1 include:spf.efwd.registrar-servers.com ~all</td></tr>
+    <tr><td>DNS MX records</td><td>eforward[1-5].registrar-servers.com (Namecheap default email forwarding)</td></tr>
+  </tbody>
+</table>
+
+<h2>Indicators of compromise*</h2>
+<p>*First Uploaded to VirusTotal by Proofpoint</p>
+<table>
+  <thead><tr><th>Indicator</th><th>Description</th><th>First Seen</th></tr></thead>
+  <tbody>
+    <tr><td>d9832d9208b2c4a34cf5220b1ebaf11f0425cf638ac67bf4669b11c80e460f58</td><td>SHA256 Pulseway RMM</td><td>2026-02-27</td></tr>
+    <tr><td>7f54cf5e2beb3f1f5d2b3ba1c6a16ce1927ffecd20a9d635329b1e16cb74fb14*</td><td>SHA256 ScreenConnect</td><td>2026-02-27</td></tr>
+    <tr><td>officcee404[.]com</td><td>Domain ScreenConnect C2</td><td>2026-02-27</td></tr>
+    <tr><td>sfrclak[.]com</td><td>Domain C&amp;C server</td><td>2026-03-30</td></tr>
+    <tr><td>hxxps://gooledives.z48.web.core.windows[.]net/%e0%a6%a8%e0%a6%bf%e0%a6%b0%e0%a7%8d%e0%a6%ac%e0%a6%be%e0%a6%9a%e0%a6%a8_%e0%a7%a8%e0%a7%a6%e0%a7%a8%e0%a7%ac.html</td><td>URL Fake Cloudflare Turnstile challenge page</td><td>Jan-26</td></tr>
+  </tbody>
+</table>
+
+<h3>Web shells</h3>
+<ul>
+  <li>98442387d466f27357d727b3706037a4df12a78602b93df973b063462a677761 (aws.php)</li>
+  <li>cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce (file_save.php)</li>
+</ul>
+
+<h2>Indicators of Compromise (IoCs)</h2>
+<table>
+  <thead><tr><th>File</th><th>SHA256</th><th>Detection name</th></tr></thead>
+  <tbody>
+    <tr><td>EvelynStealer.exe</td><td>aba7133f975a0788dd2728b4bbb1d7d948e50571a033a1e8f47a2691e98600c5</td><td>Trojan.Win64.EVELYNSTEALER.A</td></tr>
+    <tr><td>Lightshot.dll</td><td>369479bd9a248c9448705c222d81ff1a0143343a138fc38fc0ea00f54fcc1598</td><td>Trojan.Win32.DOWNLOADER.CM</td></tr>
+    <tr><td>server09.mentality.cloud</td><td>FTP Server</td><td></td></tr>
+    <tr><td>syn1112223334445556667778889990.org</td><td>HTTP Server</td><td></td></tr>
+  </tbody>
+</table>
+</article>
+</body>
+</html>

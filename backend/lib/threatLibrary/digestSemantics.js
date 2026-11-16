@@ -67,7 +67,10 @@ const KIND_PATTERNS = [
   ],
   [
     DIGEST_KINDS.CRYPTO_KEY,
-    /(?:^|[^a-z0-9])(?:(?:aes|rc4|rsa|xor|chacha\d*|salsa\d*|des|3des|blowfish|hmac|encryption|decryption|session|symmetric|secret|private|public|master|shared|cipher|crypto)[\s_-]*(?:key|iv|nonce|secret)s?|(?:public|private|host|server|client|ssh)\s+(?:(?:rsa|dsa|ecdsa|ed25519|ed448|x25519|ssh|sftp|[a-z]{2,10}\d{0,5})\s+){1,2}keys?|ssh[\s_-]+(?:host[\s_-]+)?(?:key[\s_-]+)?fingerprints?|keys?[\s_-]*(?:material|stream)|initiali[sz]ation\s+vector|iv|nonce|salt)(?:[^a-z0-9]|$)/i
+    // A key size / block mode may sit between the cipher and the key noun
+    // ("AES-256-GCM key", "AES 128 CBC IV", "ChaCha20-Poly1305 key") —
+    // tl-digest-v8.
+    /(?:^|[^a-z0-9])(?:(?:aes|rc4|rsa|xor|chacha\d*|salsa\d*|des|3des|blowfish|hmac|encryption|decryption|session|symmetric|secret|private|public|master|shared|cipher|crypto)(?:[\s_-]*(?:\d{2,4}(?:[\s_-]*bits?)?|gcm|cbc|ctr|ecb|cfb|ofb|xts|ccm|siv|poly1305))*[\s_-]*(?:key|iv|nonce|secret)s?|(?:public|private|host|server|client|ssh)\s+(?:(?:rsa|dsa|ecdsa|ed25519|ed448|x25519|ssh|sftp|[a-z]{2,10}\d{0,5})\s+){1,2}keys?|ssh[\s_-]+(?:host[\s_-]+)?(?:key[\s_-]+)?fingerprints?|keys?[\s_-]*(?:material|stream)|initiali[sz]ation\s+vector|iv|nonce|salt)(?:[^a-z0-9]|$)/i
   ],
   [
     DIGEST_KINDS.IDENTIFIER,
@@ -115,6 +118,14 @@ const WELL_KNOWN_DIGESTS = (() => {
     for (const alg of ['md5', 'sha1', 'sha256']) {
       const hex = crypto.createHash(alg).update(input, 'utf8').digest('hex');
       out.set(hex, { algorithm: alg, input });
+    }
+    // A longer trivial digest cut to a hash-column width ("cf83e135…ce9ce", the
+    // first 64 hex of SHA-512("") listed as a SHA-256) — tl-digest-v8.
+    for (const alg of ['sha384', 'sha512']) {
+      const hex = crypto.createHash(alg).update(input, 'utf8').digest('hex');
+      for (const width of [64, 40, 32]) {
+        if (!out.has(hex.slice(0, width))) out.set(hex.slice(0, width), { algorithm: `${alg}_prefix`, input });
+      }
     }
   }
   return out;

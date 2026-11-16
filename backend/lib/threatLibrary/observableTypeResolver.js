@@ -104,7 +104,7 @@ import { isValidIpAddress } from '../publicIp.js';
  * v29 (import audit 35890–35901 P1): an angle-bracket placeholder may carry a
  * colon ("<linkid:8>", "%3Clinkid:8%3E"). It is still a template, not a URL.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v29';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v30';
 
 const TITLE_CASE_TLD_HOST_RE = /^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[A-Z][a-z]{1,23}$/;
 const TITLE_CASE_TLD_HOST_GLOBAL_RE = /(?<![\w.-])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[A-Z][a-z]{1,23}(?![\w-])/g;
@@ -619,6 +619,13 @@ const URL_TEMPLATE_PLACEHOLDER_RE = new RegExp([
   /\/X{3,}(?=[/?#]|$)/.source
 ].join('|'), 'i');
 
+/** Anti-malware detection name: category, then a platform label, then a family. */
+const AV_DETECTION_NAME_RE =
+  /^(?:trojan(?:spy|downloader|dropper|-\w+)?|backdoor|worm|virus|ransom(?:ware)?|hacktool|riskware|pua|pup|adware|spyware|exploit|rootkit|coinminer|infostealer|pws)\.(?:win(?:16|32|64)|w32|w64|msil|js|vbs|ps1|powershell|linux|elf|osx|macos|android(?:os)?|python|java|php|html|script|bat|o97m|x97m|w97m|shell|unix|multi)\.[a-z0-9_-]+(?:\.[a-z0-9_!-]+)*$/i;
+
+/** A run of consecutive percent escapes ("%e0%a6%a8"). */
+const PERCENT_ESCAPE_RUN_RE = /(?:%[0-9A-Fa-f]{2})+/g;
+
 /** Markup that is not an unexpanded publisher placeholder ("<span>", "<br>"). */
 const HTML_TAG_NAMES = new Set([
   'a', 'b', 'blockquote', 'br', 'code', 'div', 'em', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
@@ -636,7 +643,16 @@ function placeholderNameIsHtmlTag(name) {
  * @param {string} refanged
  */
 export function urlContainsTemplatePlaceholder(refanged) {
-  const s = String(refanged || '');
+  // Percent-encoded UTF-8 ("/%e0%a6%a8_%e0%a7%a8.html", a Bengali file name)
+  // is the resource's real name: an escape run that decodes to non-ASCII text
+  // is never part of a "%NAME%" variable (tl-type-resolver-v30).
+  const s = String(refanged || '').replace(PERCENT_ESCAPE_RUN_RE, (run) => {
+    try {
+      return /[^\x00-\x7f]/.test(decodeURIComponent(run)) ? 'u'.repeat(run.length / 3) : run;
+    } catch {
+      return run;
+    }
+  });
   if (!URL_TEMPLATE_PLACEHOLDER_RE.test(s)) return false;
   const stripped = s.replace(/<\/?([A-Za-z][\w:-]*)\b[^>]*>/g, (full, name) => (
     placeholderNameIsHtmlTag(name) ? '' : full
@@ -918,6 +934,12 @@ export function resolveDottedToken(raw, ctx = {}) {
   // (tl-type-resolver-v23).
   if (labels.length === 4 && labels.every((l) => /^(?:\d{1,3}|x{1,3})$/.test(l)) && /^\d/.test(labels[0]) && labels.some((l) => /^x+$/.test(l))) {
     return out('skip', 'redacted_ipv4');
+  }
+  // An anti-malware detection name ("Trojan.Win32.DOWNLOADER.CM",
+  // "Backdoor.MacOS.NUKESPED.MANP"): category.platform.family[.variant],
+  // whatever ccTLD its variant suffix collides with (tl-type-resolver-v30).
+  if (AV_DETECTION_NAME_RE.test(refanged) && !DEFANG_MARKER_RE.test(original)) {
+    return out('technical_artifact', 'detection_name');
   }
 
   const basenames = ctx.urlPathBasenames || new Set();

@@ -65,8 +65,8 @@ const isMember = (x, value) => {
 };
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v71');
-  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v20');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v72');
+  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v21');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v22');
 });
 
