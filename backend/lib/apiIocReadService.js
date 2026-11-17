@@ -10,7 +10,7 @@ import {
   isDslError,
   getQueryTimeoutMs
 } from './iocSearchDsl/index.js';
-import { buildPlainSearchPageSql } from './iocSearchDsl/searchPageSql.js';
+import { buildPlainSearchPageSql, cursorCreatedAtKeySql } from './iocSearchDsl/searchPageSql.js';
 import { fetchIocThreatClassificationSlugs, iocPairKey } from './iocThreatClassifications.js';
 import { hydrateIocApiMetadata, EMPTY_IOC_API_METADATA } from './iocApiMetadata.js';
 import { toApiIocResponse, loadManualTags } from './apiIocService.js';
@@ -44,6 +44,16 @@ export function decodeApiIocCursor(raw) {
     /* invalid */
   }
   return { invalid: true };
+}
+
+/**
+ * Keyset cursor for the last row of a page. Uses the SQL-side microsecond key
+ * (cursor_created_at) — never the millisecond JS Date, which would skip the
+ * rest of a same-millisecond batch on the next page.
+ */
+export function apiIocNextCursor(row) {
+  const t = row.cursor_created_at || new Date(row.created_at).toISOString();
+  return encodeApiIocCursor({ t, id: String(row.id) });
 }
 
 function listItem(row) {
@@ -113,7 +123,8 @@ export async function listApiIocs(pool, { cursor, limit, type, status } = {}) {
   params.push(pageSize + 1);
   const { rows } = await pool.query(
     `SELECT id, public_id, observable, observable_type, status, confidence, note, created_at,
-            threat_classification
+            threat_classification,
+            ${cursorCreatedAtKeySql('ioc_items')} AS cursor_created_at
      FROM ioc_items
      ${where}
      ORDER BY created_at DESC, id DESC
@@ -130,7 +141,7 @@ export async function listApiIocs(pool, { cursor, limit, type, status } = {}) {
       limit: pageSize,
       has_more: hasMore,
       next_cursor: hasMore && last
-        ? encodeApiIocCursor({ t: new Date(last.created_at).toISOString(), id: String(last.id) })
+        ? apiIocNextCursor(last)
         : null
     }
   };
@@ -248,7 +259,7 @@ export async function searchApiIocs(pool, { query, cursor, limit } = {}) {
       limit: pageSize,
       has_more: hasMore,
       next_cursor: hasMore && last
-        ? encodeApiIocCursor({ t: new Date(last.created_at).toISOString(), id: String(last.id) })
+        ? apiIocNextCursor(last)
         : null
     }
   };

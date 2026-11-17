@@ -215,6 +215,17 @@ export function buildFileArtifactSearchPageSql({
     LIMIT $${limitParamIdx}`;
 }
 
+/**
+ * Full-precision (microsecond) UTC key of an ioc_items.created_at for keyset
+ * cursors. A JS Date only holds milliseconds, so a cursor built from
+ * `new Date(row.created_at).toISOString()` sits *before* the row's real
+ * timestamp: `(created_at, id) < (cursor_t, cursor_id)` then skips every
+ * remaining row of that same millisecond (bulk feed imports share one).
+ */
+export function cursorCreatedAtKeySql(itemAlias = 'i') {
+  return `to_char(${itemAlias}.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+}
+
 export function buildPlainSearchPageSql({
   whereSql,
   keysetClause = '',
@@ -223,10 +234,12 @@ export function buildPlainSearchPageSql({
 }) {
   // includeIocMetadata: the API/MCP search serializer reports confidence, note and
   // the legacy classification column, so it must select them (they were silently
-  // serialized as null / [] before). UI list callers keep the narrow projection.
+  // serialized as null / [] before), plus the microsecond cursor key its keyset
+  // pagination needs. UI list callers keep the narrow projection.
   const metadataCols = includeIocMetadata
     ? `,
-           i.confidence, i.note, i.threat_classification`
+           i.confidence, i.note, i.threat_classification,
+           ${cursorCreatedAtKeySql('i')} AS cursor_created_at`
     : '';
   return `
     SELECT i.id, i.public_id, i.observable, i.observable_type,
