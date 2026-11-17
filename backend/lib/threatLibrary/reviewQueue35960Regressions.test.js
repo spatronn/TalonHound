@@ -122,3 +122,25 @@ test('B: an IPv6 zero run defanged as one bracket refangs (35967)', () => {
   assert.equal(member(result, 'ip', '43.250.53.42'), true);
   assert.equal(member(result, 'ipv6', '2a09:bac5:4e21:2e3c::49b:9'), true);
 });
+
+test('C: a highlighter textarea whose entity-escaped samples the document holds decoded is a duplicate (35984)', async () => {
+  const { isDuplicatedInDocumentRegion, unaccountedRegions } = await import('./reportQualityStatus.js');
+  const documentText = [
+    '1 2 3 | wss://main.pusher.ably.net/app/<APP_KEY>?protocol=7&client=cpp-socks5 Use Pusher Channels protocol version 7',
+    'grant_type: https://graph.microsoft.com/.default&grant_type=client_credentials&client_secret=<redacted>'
+  ].join('\n').toLowerCase();
+  const ably = {
+    region_kind: 'textarea',
+    locator: 'textarea.urvanov-syntax-highlighter-plain print-no',
+    observable_count: 1,
+    sample_observables: ['wss://main.pusher.ably.net/app/&lt;APP_KEY&gt;?protocol=7&amp;client=cpp-socks5']
+  };
+  const graph = { ...ably, sample_observables: ['https://graph.microsoft.com/.default&amp;grant_type=client_credentials&amp;client_secret=&lt;redacted&gt;'] };
+  assert.equal(isDuplicatedInDocumentRegion(ably, documentText), true);
+  assert.equal(isDuplicatedInDocumentRegion(graph, documentText), true);
+  // A value the document does not hold stays unaccounted.
+  const lost = { ...ably, sample_observables: ['https://evil.example/a?x=1&amp;y=2'] };
+  assert.equal(isDuplicatedInDocumentRegion(lost, documentText), false);
+  const report = { source_url: 'https://securelist.example/x/', canonical_document: { blocks: [{ text: documentText }] } };
+  assert.deepEqual(unaccountedRegions({ report, significantRegions: [ably, graph, lost] }).map((r) => r.sample_observables[0]), [lost.sample_observables[0]]);
+});
