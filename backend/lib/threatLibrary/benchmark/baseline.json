@@ -1,8 +1,8 @@
 {
   "versions": {
-    "candidates": "tl-candidates-v73",
+    "candidates": "tl-candidates-v74",
     "zones": "tl-zones-v20",
-    "tables": "tl-table-v22",
+    "tables": "tl-table-v23",
     "type_resolver": "tl-type-resolver-v30",
     "html": "threat_library_html_v14",
     "pdf": "threat_library_pdf_v9",
@@ -10,11 +10,11 @@
     "metrics": "tl-benchmark-metrics-v2"
   },
   "aggregate": {
-    "cases": 115,
-    "cases_exact": 113,
+    "cases": 116,
+    "cases_exact": 114,
     "indicators": {
-      "expected": 1632,
-      "tp": 1630,
+      "expected": 1637,
+      "tp": 1635,
       "fp": 0,
       "fn": 2,
       "fn_not_extracted": 0,
@@ -28,7 +28,7 @@
     "candidate_extraction_recall": 0.9994,
     "context_only_accuracy": 1,
     "legitimate_exclusion_accuracy": 1,
-    "assertion_accuracy": 0.9704,
+    "assertion_accuracy": 0.9706,
     "section_accuracy": 1,
     "non_indicators_promoted": 0,
     "ai_dependent_entries": 15,
@@ -36,9 +36,9 @@
     "quality": {
       "high": 0,
       "warning": 3,
-      "info": 32,
+      "info": 33,
       "cases_flagged": 3,
-      "exact_cases": 113,
+      "exact_cases": 114,
       "exact_cases_flagged": 3,
       "failing_cases": 2,
       "failing_cases_flagged": 0
@@ -524,6 +524,28 @@
       "assertions_checked": 10,
       "warning_codes": [
         "non_file_digest_reclassified",
+        "reference_column_values_context"
+      ]
+    },
+    "control-review-queue-35960-shapes": {
+      "members": [
+        "domain:transzimbra.linkpc.net",
+        "ip:178.83.37.220",
+        "ip:43.250.53.42",
+        "ipv6:2a09:bac5:4e21:2e3c::49b:9",
+        "url:https://dobeqnesmot.cc/gate"
+      ],
+      "tp": 5,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 5,
+      "assertions_checked": 5,
+      "warning_codes": [
         "reference_column_values_context"
       ]
     },

@@ -372,8 +372,13 @@ export {
  * the publisher decrypted / extracted from the sample carries the
  * configuration key + lead-in on its occurrence (promotion evidence only,
  * never membership).
+ * v74 (review queue 35960–35985): tl-table-v23 + tl-defang-v8. A table row
+ * whose label names the actor's victims ("Recent Breaches", "Victim sites")
+ * lists breached organizations: its values are Context Only provenance, never
+ * Indicators. An IPv6 zero run defanged as one bracket ("2e3c[::]49b") refangs
+ * to "::".
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v73';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v74';
 
 import { normalizeObservable } from '../observable-normalization.js';
 import { refangObservable, refangTextForExtraction } from './defang.js';

@@ -120,6 +120,12 @@ function iocShapeCount(text) {
  * @param {object[]} blocks zone-annotated canonical blocks
  * @param {object[]} candidates finalized candidates (evidence policy applied)
  */
+function victimListingOnly(interp) {
+  const rows = Array.isArray(interp?.rows) ? interp.rows : [];
+  const ignorable = new Set(['victim_listing_row', 'empty_row', 'subheader_row']);
+  return rows.some((r) => r.reason === 'victim_listing_row') && rows.every((r) => r.status !== 'valid' && ignorable.has(r.reason));
+}
+
 export function structuralCompleteness(blocks, candidates) {
   const tablesNotInterpreted = [];
   for (const b of blocks || []) {
@@ -127,6 +133,10 @@ export function structuralCompleteness(blocks, candidates) {
     const interp = b.ioc_table || null;
     if (interp && interp.kind === 'ioc_table' && interp.explicit) continue;
     if (interp && (interp.kind === 'identifier_table' || interp.kind === 'artifact_table')) continue;
+    // Every row is a victim listing ("Recent breaches" → "Victim sites | …"):
+    // the table was read, and its values are deliberately Context Only
+    // (tl-table-v23), not left to the model.
+    if (victimListingOnly(interp)) continue;
     const shapes = iocShapeCount(b.text);
     const curated = CURATED_ZONES.has(String(b.zone || ''));
     const indicatorHeader = Array.isArray(interp?.columns) && interp.columns.some((c) => c.method === 'header_unverified');

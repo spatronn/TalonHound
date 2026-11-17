@@ -1,0 +1,38 @@
+{
+  "id": "control-review-queue-35960-shapes",
+  "title": "Control: victim-listing rows of an IoC table, IPv6 zero run defanged as one bracket",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": ["control", "review_queue_35960", "victim_listing_row", "ipv6_defang", "mode_a"],
+  "source": {
+    "kind": "html_file",
+    "path": "control-review-queue-35960-shapes.html",
+    "url": "https://research.example/blog/review-queue-35960-control/"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed from Need Review reports 35960 (HivePro 3AM 'Type | Value' IoC table ending in a 'Recent Breaches' row), 35968 (HivePro SafePay 'Recent breaches' sub-table with a 'Victim sites' row) and 35967 (HivePro UpdraftCentral 'IPv6 | 2a09[:]bac5[:]4e21[:]2e3c[::]49b[:]9'), using the publishers' own values",
+      "verified_by": "construction + manual comparison with each publisher article",
+      "verified_at": "2026-11-17",
+      "notes": "Victim websites named in 'Recent Breaches' / 'Victim sites' rows are breached organizations, never Indicators; the bracketed IPv6 zero run is that address."
+    },
+    "indicators": [
+      { "type": "ip", "value": "43.250.53.42", "assertion": "explicit" },
+      { "type": "ip", "value": "178.83.37.220", "assertion": "explicit" },
+      { "type": "ipv6", "value": "2a09:bac5:4e21:2e3c::49b:9", "assertion": "explicit" },
+      { "type": "domain", "value": "transzimbra.linkpc.net", "assertion": "explicit" },
+      { "type": "url", "value": "https://dobeqnesmot.cc/gate", "assertion": "explicit" }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      { "type": "url", "value": "https://www.fleetworksinc.com/" },
+      { "type": "url", "value": "https://www.stjames.wa.edu.au/" },
+      { "type": "url", "value": "https://www.amc.org.au/" },
+      { "type": "url", "value": "https://hiqbio.com/" },
+      { "type": "url", "value": "https://www.dwi-bau.de/" },
+      { "type": "url", "value": "https://www.t-systems.com/" }
+    ],
+    "sections": []
+  }
+}

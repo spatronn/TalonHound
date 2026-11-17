@@ -28,7 +28,7 @@ import { OBSERVABLE_TYPE_RESOLVER_VERSION, templateUrlSpanEnd, validateUrlCandid
 import { declaredIndicatorListText, stripTrailingInlineComment } from './indicatorScope.js';
 
 test('P1 contracts', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v73');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v74');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v22');
   assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v30');
 });
