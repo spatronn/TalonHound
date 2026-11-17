@@ -71,6 +71,11 @@ function refangDots(text) {
     .replace(TYPOGRAPHIC_TIMES_IN_LABEL_RE, 'x');
 }
 const BRACKET_COLON_RE = /\[:\]|\(:\)|\{:\}/g;
+// The IPv6 zero-run marker defanged as one bracket ("2a09[:]bac5[:]4e21[:]
+// 2e3c[::]49b[:]9", HivePro tl-defang-v8): `[::]` → `::`. Only between two
+// hex digits, so prose such as "C++[::]" or a lone "[::]" placeholder stays
+// untouched.
+const BRACKET_DOUBLE_COLON_RE = /(?<=[0-9A-Fa-f])(?:\[::\]|\(::\)|\{::\})(?=[0-9A-Fa-f])/g;
 // Markdown-escaped bracket defang emitted verbatim by some CMSes inside code
 // spans: `evil\[.\]com`, `hxxps\[:\]//`, `evil\[.]com`. Only the escape of a
 // bracket that encloses a defang token is removed; other backslashes stay.
@@ -115,6 +120,7 @@ export function refangObservable(value) {
   if (!v) return '';
   v = refangSchemes(unescapeMarkdownDefang(v));
   v = refangDots(v);
+  v = v.replace(BRACKET_DOUBLE_COLON_RE, '::');
   v = v.replace(BRACKET_COLON_RE, ':');
   // meow:// → http:// (rare vendor defang)
   v = v.replace(/\bmeow:\/\//gi, 'http://');
@@ -132,6 +138,7 @@ export function refangObservable(value) {
 export function refangTextForExtraction(text) {
   let t = refangSchemes(unescapeMarkdownDefang(stripInvisibleFormatChars(String(text ?? ''))));
   t = refangDots(t);
+  t = t.replace(BRACKET_DOUBLE_COLON_RE, '::');
   t = t.replace(BRACKET_COLON_RE, ':');
   t = t.replace(/\bmeow:\/\//gi, 'http://');
   t = t.replace(COLON_NO_SLASH_SCHEME_RE, (_, scheme) => `${normalizeScheme(scheme)}://`);
@@ -144,6 +151,6 @@ export function refangTextForExtraction(text) {
  */
 export function looksDefanged(value) {
   const v = String(value || '');
-  return /hxxps?(?::\/\/|\[:)/i.test(v) || /\[\.\]|\(\.\)|\{\.\}/.test(v) || /\[:\]|\[:\/{1,2}\]/.test(v)
+  return /hxxps?(?::\/\/|\[:)/i.test(v) || /\[\.\]|\(\.\)|\{\.\}/.test(v) || /\[:\]|\[:\/{1,2}\]|\[::\]/.test(v)
     || MD_ESCAPED_DEFANG_TEST_RE.test(v);
 }

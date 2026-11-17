@@ -125,7 +125,7 @@ function embeddedAbsoluteUrl(token) {
  * parameter, the way the text pass reads it — so a table that becomes an IOC
  * table once its email rows parse keeps its template-URL rows.
  */
-export const TABLE_SEMANTICS_VERSION = 'tl-table-v22';
+export const TABLE_SEMANTICS_VERSION = 'tl-table-v23';
 
 /** "0x" + exactly an MD5 run, as one whole token (v19). 40 / 64 hex are EVM values. */
 export const HEX_LITERAL_DIGEST_RE = /^0x([0-9a-f]{32})$/i;
@@ -1201,6 +1201,45 @@ export function registrationAttributeRowValues(block) {
   return out;
 }
 
+/**
+ * Row labels naming the actor's victims rather than its infrastructure
+ * ("Recent Breaches", "Victim sites", "Affected organizations"): HivePro
+ * advisories list leak-site victims' websites as a row of the IoC table
+ * (tl-table-v23).
+ */
+const VICTIM_LISTING_ROW_RE =
+  /^(?:(?:recent|recently|latest|known|listed|claimed|reported)\s+)?(?:breaches|breached\s+(?:organi[sz]ations?|sites?|websites?|domains?|entities|companies|victims?)|victims?(?:\s+(?:sites?|websites?|domains?|urls?|organi[sz]ations?|list|entities|companies))?|(?:affected|impacted)\s+(?:organi[sz]ations?|victims?|entities|companies))$/;
+
+/** True when a table row label lists victims ("Recent Breaches", "Victim sites"). */
+export function isVictimListingRowLabel(label) {
+  return VICTIM_LISTING_ROW_RE.test(normalizeHeaderLabel(label));
+}
+
+/**
+ * Values of a table's victim-listing rows ("Recent Breaches |
+ * https://www.victim.example …", "Victim sites | …"): the organizations the
+ * actor breached, never the actor's infrastructure. They stay Context Only
+ * provenance, like registration-profile rows (tl-table-v23).
+ * @param {{ table?: { rows?: Array<string[]|{ cells?: string[] }> } }} block
+ * @returns {{ refanged: string, raw: string, candidate_type: string }[]}
+ */
+export function victimListingRowValues(block) {
+  const out = [];
+  for (const r of block?.table?.rows || []) {
+    const cells = (Array.isArray(r) ? r : r?.cells || []).map((c) => String(c ?? '').trim());
+    const labelIndex = cells.findIndex(Boolean);
+    if (labelIndex < 0 || !isVictimListingRowLabel(cells[labelIndex])) continue;
+    for (const cell of cells.slice(labelIndex + 1)) {
+      if (!cell) continue;
+      for (const v of parseIndicatorCell(cell, null).values) {
+        if (v.is_ioc === false) continue;
+        out.push({ refanged: v.refanged, raw: v.raw, candidate_type: v.candidate_type });
+      }
+    }
+  }
+  return out;
+}
+
 /** A cell naming a network service role ("FTP Server", "C2 server", "Exfiltration host"). */
 const ROW_NETWORK_ROLE_RE =
   /^(?:(?:ftp|sftp|https?|web|smtp|imap|pop3|mail|ssh|dns|proxy|relay|exfil(?:tration)?|staging|download|upload|payload|c2|c&c|command[\s-]and[\s-]control|panel)\s+)+(?:servers?|hosts?|domains?|endpoints?|nodes?)$|^(?:c2|c&c)$/i;
@@ -1732,6 +1771,16 @@ export function interpretIocTable(block, opts = {}) {
     if (!typeCol && REGISTRATION_ATTRIBUTE_ROW_RE.test(normalizeHeaderLabel(description || ''))) {
       reject({ row_index: i, cells: cells.map((c) => String(c || '').trim()), values: [], description }, 'registration_attribute_row');
       continue;
+    }
+    // A row whose label names the actor's victims ("Recent Breaches |
+    // https://www.victim.example …", "Victim sites | …") lists breached
+    // organizations, not infrastructure: Context Only provenance (tl-table-v23).
+    {
+      const firstCell = cells.map((c) => String(c || '').trim()).find(Boolean) || '';
+      if (isVictimListingRowLabel(typeCol ? String(cells[typeCol.index] || '') : description || firstCell)) {
+        reject({ row_index: i, cells: cells.map((c) => String(c || '').trim()), values: [], description }, 'victim_listing_row');
+        continue;
+      }
     }
     const row = {
       row_index: i,

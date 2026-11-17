@@ -80,11 +80,23 @@ export function documentTextForCoverage(report) {
  * @param {{ observable_count: number, sample_observables?: string[] }} region
  * @param {string|null} documentText lower-cased, from documentTextForCoverage
  */
+function decodeBasicHtmlEntities(s) {
+  return s
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0*39;|&apos;/gi, "'")
+    .replace(/&amp;/gi, '&');
+}
+
 export function isDuplicatedInDocumentRegion(region, documentText) {
   const samples = Array.isArray(region?.sample_observables) ? region.sample_observables : [];
   if (!documentText || !samples.length || Number(region?.observable_count) > REGION_SAMPLE_LIMIT) return false;
   return samples.every((v) => {
-    const needle = String(v || '').trim().toLowerCase();
+    // Samples of a dropped <textarea> are its raw markup text: the HTML
+    // entities of a code listing ("&amp;grant_type", "&lt;APP_KEY&gt;") are
+    // the same characters the document holds decoded (35984).
+    const needle = decodeBasicHtmlEntities(String(v || '')).trim().toLowerCase();
     return needle.length > 0 && documentText.includes(needle);
   });
 }

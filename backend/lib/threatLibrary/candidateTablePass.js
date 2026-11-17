@@ -3,7 +3,7 @@
  */
 
 import { normalizeCandidateValue } from './candidateValue.js';
-import { parseIndicatorCell, registrationAttributeRowValues } from './tableSemantics.js';
+import { parseIndicatorCell, registrationAttributeRowValues, victimListingRowValues } from './tableSemantics.js';
 import { RESOLVED_TYPES } from './observableTypeResolver.js';
 import { buildRowObservation } from './sourceObservation.js';
 import { descriptionClauseAssertsRole, tableColumnLabels, versionColumnTokens, OCCURRENCE_FORMS, HISTORICAL_RESOLUTION_ROW_RE, candidateKey, relatedValuesFromDescription } from './candidateHelpers.js';
@@ -75,6 +75,11 @@ export function readTypedTables(blocks, acc, ctx) {
       }
       // Registration-profile rows stay provenance in the regex passes too (tl-table-v21).
       for (const v of registrationAttributeRowValues(block)) {
+        const n = normalizeCandidateValue(v.refanged, v.candidate_type);
+        if (n?.ok) refValues.add(`${n.candidateType}:${n.normalizedValue.toLowerCase()}`);
+      }
+      // Victim-listing rows ("Recent Breaches") likewise (tl-table-v23).
+      for (const v of victimListingRowValues(block)) {
         const n = normalizeCandidateValue(v.refanged, v.candidate_type);
         if (n?.ok) refValues.add(`${n.candidateType}:${n.normalizedValue.toLowerCase()}`);
       }
@@ -362,6 +367,18 @@ export function readTypedTables(blocks, acc, ctx) {
         referenceCell: true,
         typingReason: 'registration_attribute_row',
         typing: { typing_reason: 'registration_attribute_row' }
+      });
+    }
+    // Victim-listing rows ("Recent Breaches | https://www.victim.example",
+    // "Victim sites | …"): breached organizations named by the publisher,
+    // kept as Context Only values (tl-table-v23).
+    for (const v of victimListingRowValues(block)) {
+      add(v.refanged, v.candidate_type, block, {
+        form: OCCURRENCE_FORMS.STANDALONE,
+        originalValue: v.raw,
+        referenceCell: true,
+        typingReason: 'victim_listing_row',
+        typing: { typing_reason: 'victim_listing_row' }
       });
     }
     // Attribute columns (a certificate thumbprint or fuzzy hash beside the
