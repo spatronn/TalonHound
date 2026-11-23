@@ -81,8 +81,8 @@ function legacyFallbackDocument() {
 
 test('contract versions', () => {
   assert.equal(THREAT_LIBRARY_HTML_FALLBACK_EXTRACTOR_VERSION, 'threat_library_html_fallback_v5');
-  assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v14');
-  assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v14');
+  assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v15');
+  assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v15');
   assert.equal(IOC_SOURCE_SCOPE_VERSION, 'tl-ioc-source-scope-v9');
   assert.ok(!CURRENT_HTML_EXTRACTOR_VERSIONS.includes('threat_library_html_fallback_v4'));
 });

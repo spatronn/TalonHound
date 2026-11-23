@@ -13,7 +13,7 @@ import { isCredentialLabeledHex, isIndicatorRowShape, lineContainingObservable, 
 import { FILE_EXT_HINT, NON_NETWORK_RESOLVED_TYPES, RESOLVED_TYPES, buildTypeResolutionRecord, hasDelegatedDnsSuffix, isMutexLabeledValue, parseArtifactTypeLabel } from './observableTypeResolver.js';
 import { isOnlyEmbeddedInDnsHostname } from './sourceOccurrence.js';
 import { isDescriptionColumnMention } from './tableSemantics.js';
-import { DIGEST_KINDS, NON_FILE_DIGEST_KINDS, classifyHexDigest, coreferencedObjectDigest } from './digestSemantics.js';
+import { DIGEST_KINDS, NON_FILE_DIGEST_KINDS, classifyHexDigest, coreferencedObjectDigest, digestRowLabel } from './digestSemantics.js';
 import { samePublisherHostFamily, surroundingWindow, URL_SCHEME_PREFIX_RE, markTruncatedUrlDuplicates, MAX_TABLE_ROWS_PER_CANDIDATE, OCCURRENCE_FORMS, annotatedDigestWindow, locateInBlockText, HASH_CANDIDATE_TYPES, MIN_TRUNCATED_DIGEST_PREFIX, candidateKey, digestColumnHeader, malwareConfigSlotKey } from './candidateHelpers.js';
 
 /**
@@ -390,6 +390,7 @@ export function createCandidateAccumulator(ctx) {
       const labelled = classifyHexDigest(annotatedDigestWindow(line, n.normalizedValue) || line, n.normalizedValue, {
         scopeLabel,
         columnHeader,
+        rowLabel: digestRowLabel(block, n.normalizedValue),
         rowDescription: extra.tableRow?.description || null
       });
       // A bare occurrence of a value the document names elsewhere as a commit

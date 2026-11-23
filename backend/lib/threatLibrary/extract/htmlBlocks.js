@@ -53,10 +53,10 @@ import { createTableBlock } from '../canonicalDocument.js';
  * v14 (35944): source accounting reads the page text with a separator at every
  * block boundary (accountingTextOf), so "…com.</figcaption></figure>Figure 3"
  * is no longer the token "com.Figure"; blocks are unchanged.
- * Document extractor contract is threat_library_html_v14 so Refresh rebuilds
+ * Document extractor contract is threat_library_html_v15 so Refresh rebuilds
  * retained HTML under the current contract.
  */
-export const HTML_BLOCKS_VERSION = 'threat_library_html_v14';
+export const HTML_BLOCKS_VERSION = 'threat_library_html_v15';
 
 export function stripTags(s) {
   return String(s || '').replace(/<[^>]+>/g, ' ');
@@ -522,7 +522,9 @@ function renderedText(node, lineBreaks, extraBoundaries = null) {
     if (tag === 'img') return;
     const block = HEADING_TAGS.has(tag) || PARAGRAPH_TAGS.has(tag) || tag === 'li' || tag === 'tr' || tag === 'div' || tag === 'pre' ||
       (extraBoundaries !== null && extraBoundaries.has(tag));
-    if (block) parts.push(' ');
+    // Adjacent <code> chips are separate values (cellTextOf): the accounting
+    // reading must not glue what the blocks keep apart.
+    if (block || (extraBoundaries !== null && tag === 'code' && n.prev && isElement(n.prev) && tagOf(n.prev) === 'code')) parts.push(' ');
     for (const c of n.children || []) walk(c);
     if (block || tag === 'td' || tag === 'th') parts.push(' ');
   };
@@ -556,6 +558,34 @@ function renderedPreText(node) {
   };
   walk(node);
   return parts.join('');
+}
+
+/** Text that continues its neighbour ("185.1", ".3", "host:"): a fragment, not a whole value. */
+const VALUE_FRAGMENT_EDGE_RE = /^[.,:;/@_\-\])}]|[.,:/@_\-[({]$/;
+
+/**
+ * Text of one table cell. A cell made only of adjacent <code> elements
+ * ("<td><code>1[.]2[.]3[.]4</code><code>5[.]6[.]7[.]8</code></td>") lists one
+ * value per element: the page renders them as separate chips / lines, and with
+ * no text node between them the values would otherwise run together into one
+ * unreadable token (threat_library_html_v15). Fragments of one value keep
+ * their joined reading.
+ * @param {object} cell
+ */
+function cellTextOf(cell) {
+  let node = cell;
+  for (;;) {
+    const kids = (node.children || []).filter((c) => (c.type === 'text' ? String(c.data || '').trim() : isElement(c)));
+    if (kids.length === 1 && isElement(kids[0]) && tagOf(kids[0]) !== 'code') {
+      node = kids[0];
+      continue;
+    }
+    if (kids.length >= 2 && kids.every((c) => isElement(c) && tagOf(c) === 'code')) {
+      const values = kids.map((c) => textOf(c)).filter(Boolean);
+      if (values.length >= 2 && !values.some((v) => VALUE_FRAGMENT_EDGE_RE.test(v))) return values.join(' ');
+    }
+    return textOf(cell);
+  }
 }
 
 /**
@@ -594,7 +624,7 @@ export function tableToRows(tableEl) {
       const tag = tagOf(child);
       if (tag !== 'td' && tag !== 'th') continue;
       if (tag !== 'th') allTh = false;
-      cells.push(textOf(child));
+      cells.push(cellTextOf(child));
     }
     if (!cells.length) continue;
     if (!headers && !rows.length && (inHead || allTh) && cells.some((c) => c)) {

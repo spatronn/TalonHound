@@ -125,7 +125,7 @@ function embeddedAbsoluteUrl(token) {
  * parameter, the way the text pass reads it — so a table that becomes an IOC
  * table once its email rows parse keeps its template-URL rows.
  */
-export const TABLE_SEMANTICS_VERSION = 'tl-table-v23';
+export const TABLE_SEMANTICS_VERSION = 'tl-table-v24';
 
 /** "0x" + exactly an MD5 run, as one whole token (v19). 40 / 64 hex are EVM values. */
 export const HEX_LITERAL_DIGEST_RE = /^0x([0-9a-f]{32})$/i;
@@ -1216,6 +1216,29 @@ export function isVictimListingRowLabel(label) {
 }
 
 /**
+ * A block whose own heading (or table caption) lists victims ("Recent
+ * breaches" over a label-less table of leak-site victims' websites, the last
+ * sub-section of an advisory's IoC section): the heading is the row label the
+ * table does not repeat (tl-table-v24).
+ * @param {{ section_heading?: string|null, table?: { caption?: string|null } }} block
+ */
+export function isVictimListingBlock(block) {
+  return isVictimListingRowLabel(block?.section_heading) || isVictimListingRowLabel(block?.table?.caption);
+}
+
+/**
+ * Observable values of a non-table block under a victim heading (a list of
+ * breached organizations' websites): Context Only provenance (tl-table-v24).
+ * @param {{ type?: string, text?: string, section_heading?: string|null }} block
+ */
+export function victimListingBlockValues(block) {
+  if (!block || block.type === 'heading' || block.table || !isVictimListingBlock(block)) return [];
+  return parseIndicatorCell(String(block.text || ''), null)
+    .values.filter((v) => v.is_ioc !== false)
+    .map((v) => ({ refanged: v.refanged, raw: v.raw, candidate_type: v.candidate_type }));
+}
+
+/**
  * Values of a table's victim-listing rows ("Recent Breaches |
  * https://www.victim.example …", "Victim sites | …"): the organizations the
  * actor breached, never the actor's infrastructure. They stay Context Only
@@ -1225,11 +1248,14 @@ export function isVictimListingRowLabel(label) {
  */
 export function victimListingRowValues(block) {
   const out = [];
+  const underVictimHeading = isVictimListingBlock(block);
   for (const r of block?.table?.rows || []) {
     const cells = (Array.isArray(r) ? r : r?.cells || []).map((c) => String(c ?? '').trim());
     const labelIndex = cells.findIndex(Boolean);
-    if (labelIndex < 0 || !isVictimListingRowLabel(cells[labelIndex])) continue;
-    for (const cell of cells.slice(labelIndex + 1)) {
+    if (labelIndex < 0) continue;
+    const labelled = isVictimListingRowLabel(cells[labelIndex]);
+    if (!labelled && !underVictimHeading) continue;
+    for (const cell of labelled ? cells.slice(labelIndex + 1) : cells) {
       if (!cell) continue;
       for (const v of parseIndicatorCell(cell, null).values) {
         if (v.is_ioc === false) continue;
@@ -1740,6 +1766,7 @@ export function interpretIocTable(block, opts = {}) {
   // Notes", "Domain/URL | Notes" under an initial "SHA256 | Notes" header)
   // starts a new group whose labels declare the indicator columns' types.
   let segmentDeclared = null;
+  const victimBlock = isVictimListingBlock(block);
   for (let i = 0; i < rows.length; i += 1) {
     const cells = rows[i];
     result.stats.rows_seen += 1;
@@ -1777,7 +1804,7 @@ export function interpretIocTable(block, opts = {}) {
     // organizations, not infrastructure: Context Only provenance (tl-table-v23).
     {
       const firstCell = cells.map((c) => String(c || '').trim()).find(Boolean) || '';
-      if (isVictimListingRowLabel(typeCol ? String(cells[typeCol.index] || '') : description || firstCell)) {
+      if (victimBlock || isVictimListingRowLabel(typeCol ? String(cells[typeCol.index] || '') : description || firstCell)) {
         reject({ row_index: i, cells: cells.map((c) => String(c || '').trim()), values: [], description }, 'victim_listing_row');
         continue;
       }

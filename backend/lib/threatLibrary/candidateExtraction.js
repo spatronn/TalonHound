@@ -377,8 +377,14 @@ export {
  * lists breached organizations: its values are Context Only provenance, never
  * Indicators. An IPv6 zero run defanged as one bracket ("2e3c[::]49b") refangs
  * to "::".
+ * v75 (review queue 35986-36011): tl-table-v24 + tl-digest-v9 +
+ * threat_library_html_v15. Adjacent <code> chips of a table cell are separate
+ * values; a label-less table or list under a victim heading ("Recent
+ * breaches") is a victim listing; a row label ("Commits", "Docker digests",
+ * "SPKI SHA256", "Certificate Serial") governs every digest of its row; a
+ * labelled IOC line with no space after the colon is a row.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v74';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v75';
 
 import { normalizeObservable } from '../observable-normalization.js';
 import { refangObservable, refangTextForExtraction } from './defang.js';

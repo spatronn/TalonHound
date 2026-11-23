@@ -1172,6 +1172,16 @@ const NON_INDICATOR_LIST_LABEL_RE =
 const LABELED_LIST_LINE_RE = /^([^:：]{2,80}?)\s*[:：]\s+(\S.*)$/;
 
 /**
+ * The same row with no space after the colon ("Domains and IPs:gta6cloud[.]nexus"),
+ * a collapsed line break in the publisher's CMS. Only a label that ends in a
+ * network-observable noun reads this way, so a scheme, port, digest prefix or
+ * namespaced token ("https://x", "host:8443", "sha256:<hex>") never does
+ * (tl-candidates-v75).
+ */
+const GLUED_LABEL_LIST_LINE_RE =
+  /^([^:：]{0,60}?\b(?:domains?|ips?|ipv[46]s?|ip\s+addresses|addresses|urls?|hosts|hostnames?|c2s?|servers?))\s*[:：]([a-z0-9](?!\/\/)\S*(?:\s.*)?)$/i;
+
+/**
  * A labelled publisher IOC row whose value part lists only observables
  * ("Post exploitation IPs using stolen AWS credentials: 1.2.3.4, 5.6.7.8",
  * "Exfiltration domain: a.example and www.a.example (registered …)"): the
@@ -1182,7 +1192,7 @@ const LABELED_LIST_LINE_RE = /^([^:：]{2,80}?)\s*[:：]\s+(\S.*)$/;
 export function isLabeledObservableListLine(text) {
   const raw = String(text || '').trim().replace(BULLET_PREFIX_RE, '').trim();
   if (!raw || raw.length > 400) return false;
-  const m = LABELED_LIST_LINE_RE.exec(raw);
+  const m = LABELED_LIST_LINE_RE.exec(raw) || GLUED_LABEL_LIST_LINE_RE.exec(raw);
   if (!m) return false;
   const label = refangTextForExtraction(m[1]);
   if (OTHER_OBSERVABLE_RE.test(label) || label.split(/\s+/).length > 10) return false;

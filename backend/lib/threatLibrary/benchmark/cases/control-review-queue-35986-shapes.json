@@ -1,0 +1,123 @@
+{
+  "id": "control-review-queue-35986-shapes",
+  "title": "Control: adjacent code chips in a cell, victim sub-table, row-labelled commit / image / certificate digests, glued IOC label",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": [
+    "control",
+    "review_queue_35986",
+    "code_chip_cell",
+    "victim_listing_row",
+    "digest_row_label",
+    "mode_a"
+  ],
+  "source": {
+    "kind": "html_file",
+    "path": "control-review-queue-35986-shapes.html",
+    "url": "https://research.example/blog/review-queue-35986-control/"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed from Need Review reports 35994 (HivePro Copeland chip cells and 'Recent breaches'), 35987 (StepSecurity WPPConnect 'Commits' / 'Docker digests' rows), 35997 (HivePro eMudhra certificate table) and 36010 (Bitdefender 'Domains and IPs:gta6cloud[.]nexus'), using the publishers' own values",
+      "verified_by": "construction + manual comparison with each publisher article",
+      "verified_at": "2026-11-24",
+      "notes": "Commits, image digests (one known-good), certificate fingerprints, SPKI hashes and serials are not file samples; breached organizations are never Indicators."
+    },
+    "indicators": [
+      {
+        "type": "ip",
+        "value": "197.188.223.161",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "168.195.122.22",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "85.137.52.63",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "46.255.231.42",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "143.244.202.96",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha1",
+        "value": "755274304012c7489e85c23da3c2423d184d113b",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha1",
+        "value": "950514e4fea481c0770bd618274cecb306bd8d56",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "gta6cloud.nexus",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://velmontriq.net/",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      {
+        "type": "sha1",
+        "value": "06caa8c6f5f06e47900d5466289b4aab2753add3"
+      },
+      {
+        "type": "sha1",
+        "value": "27ed8e343f0393978c63f84888eeb9b8fa197852"
+      },
+      {
+        "type": "sha1",
+        "value": "bdddf54ca86019c853ba68c2eeca45c2ac8128d6"
+      },
+      {
+        "type": "sha256",
+        "value": "56a546a38f6e59509f627168c8d67f9c87fd487babf3ad91f375fe99a235c4c7"
+      },
+      {
+        "type": "sha256",
+        "value": "7c882ee934a5663a107b5f5a0382bfd8b1fb95150cd21ab35cd8ff9cea70d1f8"
+      },
+      {
+        "type": "url",
+        "value": "https://www.delhaize.be/"
+      },
+      {
+        "type": "url",
+        "value": "https://www.carrefour.com/"
+      },
+      {
+        "type": "sha256",
+        "value": "42c4accd12c4f59597925e1a08a7a90102608543809308d50ec427e118ba1493"
+      },
+      {
+        "type": "sha256",
+        "value": "ebed6475c2c2d80fcb199f3fe8dd6e6b3ce60b77eb15d4e42c3dec0c6f5b5105"
+      },
+      {
+        "type": "md5",
+        "value": "d8f8685e4f2bd9d82402a85a1c1eb731"
+      },
+      {
+        "type": "md5",
+        "value": "e94223bde92f914e5ab9acabfdac3710"
+      }
+    ],
+    "sections": []
+  }
+}

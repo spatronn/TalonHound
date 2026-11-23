@@ -53,7 +53,7 @@ import { selectHtmlTitle } from './titleSelection.js';
 // compares refanged values without trailing sentence punctuation, so a value
 // the document kept is never reported as an unaccounted region (35944);
 // blocks are unchanged.
-export const THREAT_LIBRARY_HTML_EXTRACTOR_VERSION = 'threat_library_html_v14';
+export const THREAT_LIBRARY_HTML_EXTRACTOR_VERSION = 'threat_library_html_v15';
 // Structured fallback v5: the fallback reads blocks with htmlBlocks too, but its
 // id stayed at v4 through htmlBlocks v7–v12, so fallback documents never went
 // stale and Refresh never re-read them (35888: React streaming SSR rows). From
