@@ -1,20 +1,20 @@
 {
   "versions": {
-    "candidates": "tl-candidates-v74",
+    "candidates": "tl-candidates-v75",
     "zones": "tl-zones-v20",
-    "tables": "tl-table-v23",
+    "tables": "tl-table-v24",
     "type_resolver": "tl-type-resolver-v30",
-    "html": "threat_library_html_v14",
+    "html": "threat_library_html_v15",
     "pdf": "threat_library_pdf_v9",
     "quality": "tl-quality-v17",
     "metrics": "tl-benchmark-metrics-v2"
   },
   "aggregate": {
-    "cases": 116,
-    "cases_exact": 114,
+    "cases": 117,
+    "cases_exact": 115,
     "indicators": {
-      "expected": 1637,
-      "tp": 1635,
+      "expected": 1646,
+      "tp": 1644,
       "fp": 0,
       "fn": 2,
       "fn_not_extracted": 0,
@@ -28,7 +28,7 @@
     "candidate_extraction_recall": 0.9994,
     "context_only_accuracy": 1,
     "legitimate_exclusion_accuracy": 1,
-    "assertion_accuracy": 0.9706,
+    "assertion_accuracy": 0.9708,
     "section_accuracy": 1,
     "non_indicators_promoted": 0,
     "ai_dependent_entries": 15,
@@ -36,9 +36,9 @@
     "quality": {
       "high": 0,
       "warning": 3,
-      "info": 33,
+      "info": 35,
       "cases_flagged": 3,
-      "exact_cases": 114,
+      "exact_cases": 115,
       "exact_cases_flagged": 3,
       "failing_cases": 2,
       "failing_cases_flagged": 0
@@ -546,6 +546,33 @@
       "assertions_correct": 5,
       "assertions_checked": 5,
       "warning_codes": [
+        "reference_column_values_context"
+      ]
+    },
+    "control-review-queue-35986-shapes": {
+      "members": [
+        "domain:gta6cloud.nexus",
+        "ip:143.244.202.96",
+        "ip:168.195.122.22",
+        "ip:197.188.223.161",
+        "ip:46.255.231.42",
+        "ip:85.137.52.63",
+        "sha1:755274304012c7489e85c23da3c2423d184d113b",
+        "sha1:950514e4fea481c0770bd618274cecb306bd8d56",
+        "url:https://velmontriq.net/"
+      ],
+      "tp": 9,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 9,
+      "assertions_checked": 9,
+      "warning_codes": [
+        "non_file_digest_reclassified",
         "reference_column_values_context"
       ]
     },

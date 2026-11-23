@@ -59,7 +59,7 @@ const KIND_PATTERNS = [
   [DIGEST_KINDS.BUILD_ID, /(?:^|[^a-z0-9])(?:gnu[\s_-]*)?build[\s_-]*id(?:\[[^\]]*\])?(?:[^a-z0-9]|$)/i],
   [
     DIGEST_KINDS.CERTIFICATE,
-    /(?:^|[^a-z0-9])(?:certificates?|certs?|x\.?509|thumbprints?|signing\s+(?:cert|key|identity)|code[\s-]*signing|ja[34]s?|jarm|serial(?:\s*(?:number|no\.?|#))?)(?:[^a-z0-9]|$)/i
+    /(?:^|[^a-z0-9])(?:certificates?|certs?|x\.?509|thumbprints?|signing\s+(?:cert|key|identity)|code[\s-]*signing|ja[34]s?|jarm|spki|subject\s+public\s+key\s+info|serial(?:\s*(?:number|no\.?|#))?)(?:[^a-z0-9]|$)/i
   ],
   [
     DIGEST_KINDS.SIMILARITY,
@@ -78,7 +78,7 @@ const KIND_PATTERNS = [
   ],
   [
     DIGEST_KINDS.OBJECT_ID,
-    /(?:^|[^a-z0-9])(?:(?:git\s+)?commits?(?:\s+(?:hash(?:es)?|ids?|sha-?1?))?|git\s+(?:blob|tree|object)s?|(?:source|git|vcs)\s+revisions?|(?:container\s+|docker\s+|oci\s+)?image\s+(?:index(?:es)?|manifests?|digests?)|(?:index|manifest)\s+digests?)(?:[^a-z0-9]|$)/i
+    /(?:^|[^a-z0-9])(?:(?:git\s+)?commits?(?:\s+(?:hash(?:es)?|ids?|sha-?1?))?|git\s+(?:blob|tree|object)s?|(?:source|git|vcs)\s+revisions?|(?:container\s+|docker\s+|oci\s+)?image\s+(?:index(?:es)?|manifests?|digests?)|(?:container|docker|oci|registry)\s+digests?|(?:index|manifest)\s+digests?)(?:[^a-z0-9]|$)/i
   ],
   [
     DIGEST_KINDS.CREDENTIAL,
@@ -233,6 +233,18 @@ export function classifyHexDigest(text, value, opts = {}) {
   // An unlabelled value (a bare list item) takes its subject from the scope
   // label the same way an algorithm-only row label does.
   const scopeGoverns = own.reason === 'unlabelled' || (own.reason === 'file_label' && ALGORITHM_ONLY_LABEL_RE.test(label));
+  // The row's own label cell names the subject of every value the row lists
+  // ("Commits (pre-rewrite) | Library: <h1>, <h2>", "SPKI SHA256 | <v1> <v2>",
+  // "Docker digests | Infected: 2.10.82 sha256:<v>"): the label window only
+  // reaches the value next to it, so a multi-value cell left the others
+  // unlabelled (tl-digest-v9). A file noun on either label keeps the file reading.
+  const rowLabel = String(opts.rowLabel || '').trim();
+  if (rowLabel && !FILE_NOUN_RE.test(rowLabel) && !FILE_NOUN_RE.test(label)) {
+    const fromRowLabel = classifyLabel(rowLabel.slice(0, 120));
+    if (fromRowLabel.kind !== DIGEST_KINDS.FILE && fromRowLabel.kind !== DIGEST_KINDS.CREDENTIAL) {
+      return { kind: fromRowLabel.kind, label: rowLabel, reason: `${fromRowLabel.kind}_row_label` };
+    }
+  }
   // A table row whose description cell, written AFTER the value, says what the
   // digest is of ("SHA-256 Hash of public ED25519 Key for WinSCP Server"):
   // that subject governs like a label (tl-digest-v2). Only a description that
@@ -366,7 +378,48 @@ export function isOciObjectDigest(text, value) {
   return false;
 }
 
-/** Reasons that only mean "no subject named": the default file reading. */
+/** A row label that names the certificates' public-key hash. */
+const SPKI_ROW_LABEL_RE = /(?:^|[^a-z0-9])(?:spki|subject\s+public\s+key\s+info)(?:[^a-z0-9]|$)/i;
+
+function tableRowCells(row) {
+  return (Array.isArray(row) ? row : row?.cells || []).map((c) => String(c ?? '').trim());
+}
+
+/**
+ * The label cell of the one table row that holds `value`, or null: the row's
+ * first non-empty cell when it is a short label and not the value's own cell.
+ * A bare algorithm row ("SHA256 | <v1> <v2>") of a table that also lists the
+ * certificates' SPKI hashes, and whose every label is a certificate attribute
+ * or an algorithm, is a list of certificate fingerprints (tl-digest-v9).
+ * @param {{ type?: string, table?: { rows?: Array<string[]|{ cells?: string[] }> } }} block
+ * @param {string} value hex
+ * @returns {string|null}
+ */
+export function digestRowLabel(block, value) {
+  const v = String(value || '').trim().toLowerCase();
+  const rows = block?.type === 'table' ? block.table?.rows || [] : [];
+  if (!v || !rows.length) return null;
+  const hasDigest = (text) => new RegExp(OTHER_DIGEST_RE.source, 'i').test(text);
+  const labelOf = (cells) => {
+    const label = cells.find(Boolean) || '';
+    return !label || label.length > 60 || cells.length < 2 || hasDigest(label) ? null : label;
+  };
+  const holding = rows.map(tableRowCells).filter((cells) => cells.some((c) => c.toLowerCase().includes(v)));
+  if (holding.length !== 1) return null;
+  const label = labelOf(holding[0]);
+  if (!label) return null;
+  if (ALGORITHM_ONLY_LABEL_RE.test(label)) {
+    const labels = rows.map(tableRowCells).filter((cells) => cells.some(Boolean)).map(labelOf);
+    const certificateTable =
+      labels.every(Boolean) &&
+      labels.some((l) => SPKI_ROW_LABEL_RE.test(l)) &&
+      labels.every((l) => ALGORITHM_ONLY_LABEL_RE.test(l) || classifyLabel(l).kind === DIGEST_KINDS.CERTIFICATE);
+    if (certificateTable) return 'Certificate fingerprint';
+  }
+  return label;
+}
+
+/** Reasons that only mean "no subject named\": the default file reading. */
 const DEFAULT_FILE_REASONS = new Set(['unlabelled', 'file_label']);
 
 /**

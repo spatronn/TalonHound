@@ -56,7 +56,7 @@ export const PUBLICATION_DATE_SOURCE_RANK = Object.freeze({
 export const PUBLICATION_DATE_PRECISIONS = Object.freeze(['date', 'datetime']);
 
 /** Bump when detection rules change (recorded next to every detection). */
-export const PUBLICATION_DATE_EXTRACTOR_VERSION = 'tl-published-at-v7';
+export const PUBLICATION_DATE_EXTRACTOR_VERSION = 'tl-published-at-v8';
 
 export function isValidPublicationDateSource(value) {
   return PUBLICATION_DATE_SOURCES.includes(String(value || '').toLowerCase());
@@ -349,6 +349,27 @@ function jsonLdBlocks(html) {
   return out;
 }
 
+/**
+ * A page may carry two article nodes that disagree: a theme's hard-coded
+ * template node ("datePublished": "2024-10-01" on every post) beside the CMS
+ * node of this post. When their dates differ, the one the page itself shows as
+ * a stand-alone visible date is the publication date; with no such single
+ * agreement the first node keeps winning (tl-published-at-v8).
+ */
+function corroboratedArticleHit(articleHits, html, opts) {
+  if (new Set(articleHits.map((h) => h.parsed.date)).size < 2) return null;
+  const visible = new Set();
+  const dom = opts.dom || parseHtml(String(html || ''));
+  for (const el of findElements(dom, (e) => ['p', 'span', 'div', 'time', 'li', 'small'].includes(String(e.name || '').toLowerCase()))) {
+    const text = textOf(el);
+    if (!text || text.length > 40 || ancestorInfo(el).inNoise) continue;
+    const mentions = findDateMentions(text, opts);
+    if (mentions.length === 1 && mentions[0].raw.trim() === text.trim()) visible.add(mentions[0].parsed.date);
+  }
+  const agreed = articleHits.filter((h) => visible.has(h.parsed.date));
+  return new Set(agreed.map((h) => h.parsed.date)).size === 1 ? agreed[0] : null;
+}
+
 function firstString(v) {
   if (Array.isArray(v)) return firstString(v[0]);
   if (v && typeof v === 'object' && typeof v['@value'] === 'string') return v['@value'];
@@ -381,7 +402,7 @@ export function extractJsonLdPublicationDate(html, opts = {}) {
       (isArticle ? articleHits : pageHits).push(hit);
     });
   }
-  const pick = articleHits[0] || pageHits[0];
+  const pick = corroboratedArticleHit(articleHits, html, opts) || articleHits[0] || pageHits[0];
   if (!pick) return emptyDetection(considered.length ? 'json_ld_unparsable' : 'json_ld_absent', considered);
   return detectionFrom(pick.parsed, 'json_ld', { selector: `application/ld+json ${pick.type}.datePublished` }, considered, {
     modified_at: pick.modified || null
@@ -467,7 +488,7 @@ export function extractMetaPublicationDate(html, opts = {}) {
 
 const NEGATIVE_CONTEXT_RE = /\b(updated|modified|last reviewed|reviewed|revised|edited|last edited|expires?|expired|comment(?:ed)?|event|webinar|deadline|register|due)\b/i;
 const PUBLISHED_LABEL_RE = /\b(published(?:\s+on)?|posted(?:\s+on)?|publication date|date published|published date|release date|released(?:\s+on)?|report date|date of publication|dated?)\s*[:\-–—]?\s*$/i;
-const PUBLISHED_CLASS_RE = /(publish|pubdate|pub-date|pub_date|posted|entry-date|entry-time|post-date|postdate|article-date|article__date|byline|dateline|date-published|datePublished|published-date|release-date)/i;
+const PUBLISHED_CLASS_RE = /(publish|pubdate|pub-date|pub_date|posted|entry-date|entry-time|post-date|postdate|article-date|article__date|byline|dateline|date-published|datePublished|published-date|release-date|(?:post|article|blog|entry)[\w-]*header[\w-]*date)/i;
 /**
  * Publisher chrome that pairs a calendar day with an article reading-time
  * ("25 Jun 2026 • , 10 min. read"). Treat as a publication byline even when
@@ -606,6 +627,27 @@ function readingTimeNextSibling(el) {
 }
 
 /**
+ * A bare date directly under the page's own title ("<h1>Title</h1>
+ * <span>November 16, 2026</span>"): the publisher's dateline. The heading must
+ * be the page title, so a dated card in a listing never qualifies
+ * (tl-published-at-v8).
+ */
+function isTitleDateline(el, titleNorm) {
+  if (!titleNorm) return false;
+  let sib = el.prev;
+  while (sib && sib.type !== 'tag') {
+    if (sib.type === 'text' && String(sib.data || '').trim()) return false;
+    sib = sib.prev;
+  }
+  if (!sib || !['h1', 'h2'].includes(String(sib.name || '').toLowerCase())) return false;
+  const heading = normalizeTitle(textOf(sib));
+  return heading.length >= 12 && (titleNorm.startsWith(heading) || heading.startsWith(titleNorm));
+}
+
+/** "TA2026247 • Report Generated On August 26, 2026": an advisory's own production stamp. */
+const REPORT_GENERATED_LABEL_RE = /\breport\s+generated(?:\s+on)?\s*[:\-–—]?\s*$/i;
+
+/**
  * Visible article date: a short element whose text is "Published: <date>" /
  * "Posted on <date>" (label required) or whose class marks it as the post
  * date and whose text is exactly a date. Body prose, copyright lines,
@@ -615,6 +657,8 @@ export function extractVisiblePublicationDate(html, opts = {}) {
   const dom = opts.dom || parseHtml(String(html || ''));
   const considered = [];
   const hits = [];
+  const titleEl = findElements(dom, (e) => String(e.name || '').toLowerCase() === 'title')[0];
+  const titleNorm = titleEl ? normalizeTitle(textOf(titleEl)) : '';
   const candidates = findElements(dom, (e) => {
     const tag = String(e.name || '').toLowerCase();
     return ['p', 'span', 'div', 'li', 'small', 'em', 'strong', 'b', 'i', 'dd', 'dt', 'td', 'th', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a', 'label', 'time', 'cite'].includes(tag);
@@ -624,8 +668,16 @@ export function extractVisiblePublicationDate(html, opts = {}) {
     if (!text || text.length > 120) continue;
     const a = el.attribs || {};
     const { inNoise, inArticle } = ancestorInfo(el);
-    if (inNoise) continue;
     const mentions = findDateMentions(text, opts);
+    // An advisory's production stamp sits in its page footer and may carry an
+    // "(Updated …)" note after it; the weakest visible signal (v8).
+    const stamp = mentions[0] && REPORT_GENERATED_LABEL_RE.test(text.slice(0, mentions[0].index)) ? mentions[0] : null;
+    if (stamp) {
+      considered.push({ where: 'visible', text, signal: 'report_generated', in_article: inArticle, parsed: stamp.parsed.date });
+      hits.push({ parsed: stamp.parsed, signal: 'report_generated', inArticle, text });
+      continue;
+    }
+    if (inNoise) continue;
     if (mentions.length !== 1) continue;
     const mention = mentions[0];
     const before = text.slice(0, mention.index);
@@ -639,6 +691,7 @@ export function extractVisiblePublicationDate(html, opts = {}) {
     if (PUBLISHED_LABEL_RE.test(before)) signal = 'label';
     else if (PUBLISHED_CLASS_RE.test(`${a.class || ''} ${a.id || ''}`) && exactDate) signal = 'class';
     else if (exactDate && isPublishedBylineChild(el)) signal = 'class';
+    else if (exactDate && isTitleDateline(el, titleNorm)) signal = 'title_dateline';
     else if (PUBLISHED_LABEL_RE.test(precedingText(el, 40)) && before.trim() === '' && after.trim().length <= 3) signal = 'label';
     else if (
       before.trim() === ''
@@ -658,7 +711,7 @@ export function extractVisiblePublicationDate(html, opts = {}) {
     hits.push({ parsed: mention.parsed, signal, inArticle, text });
   }
   if (!hits.length) return emptyDetection('visible_date_absent', considered);
-  const signalRank = { label: 0, reading_time: 1, class: 2 };
+  const signalRank = { label: 0, reading_time: 1, class: 2, title_dateline: 3, report_generated: 4 };
   hits.sort((x, y) => (
     (signalRank[x.signal] ?? 9) - (signalRank[y.signal] ?? 9)
     || Number(y.inArticle) - Number(x.inArticle)
@@ -714,6 +767,19 @@ const EXCLUDED_ZONES = new Set(['header_footer', 'navigation', 'source_metadata'
 const FRONT_MATTER_PAGES = 2;
 const FRONT_MATTER_BLOCKS = 30;
 const SHORT_BLOCK_CHARS = 200;
+
+/**
+ * "… to version 5.3.9, 5.4.9, or 5.5.5, released on June 18, 2026": a release
+ * verb in the middle of a sentence dates the product the sentence is about,
+ * not the report (tl-published-at-v8).
+ */
+const RELEASE_LABEL_RE = /\b(?:released|issued)(?:\s+on)?\s*[:\-–—]?\s*$/i;
+function isMidSentenceReleaseLabel(text, index) {
+  const m = RELEASE_LABEL_RE.exec(text.slice(0, index));
+  if (!m) return false;
+  const lead = text.slice(0, m.index).trim();
+  return lead.length > 40 && /[a-z0-9,)]$/i.test(lead);
+}
 
 function normalizeTitle(s) {
   return String(s || '').toLowerCase().replace(/[^a-z0-9一-鿿]+/g, '').slice(0, 60);
@@ -835,7 +901,7 @@ export function extractDocumentPublicationDate(document, opts = {}) {
       // later timeline date in the same front-matter window cannot wipe it.
       const trailing = text.slice(m.index + m.raw.length);
       const readingTimeByline = before.trim() === '' && READING_TIME_BYLINE_RE.test(trailing) && text.length <= 80;
-      const label = DOC_LABEL_RE.test(before) || readingTimeByline;
+      const label = (DOC_LABEL_RE.test(before) && !isMidSentenceReleaseLabel(text, m.index)) || readingTimeByline;
       if (label) {
         labelled.push({
           block: b,

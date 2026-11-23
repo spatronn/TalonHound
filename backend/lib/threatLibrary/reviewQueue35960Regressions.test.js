@@ -20,8 +20,8 @@ import { isVictimListingRowLabel, TABLE_SEMANTICS_VERSION } from './tableSemanti
 import { looksDefanged, refangObservable, refangTextForExtraction } from './defang.js';
 
 test('review queue 35960 contracts', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v74');
-  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v23');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v75');
+  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v24');
 });
 
 function extract(blocks) {

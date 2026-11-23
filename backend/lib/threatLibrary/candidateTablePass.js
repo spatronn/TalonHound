@@ -3,7 +3,7 @@
  */
 
 import { normalizeCandidateValue } from './candidateValue.js';
-import { parseIndicatorCell, registrationAttributeRowValues, victimListingRowValues } from './tableSemantics.js';
+import { parseIndicatorCell, registrationAttributeRowValues, victimListingBlockValues, victimListingRowValues } from './tableSemantics.js';
 import { RESOLVED_TYPES } from './observableTypeResolver.js';
 import { buildRowObservation } from './sourceObservation.js';
 import { descriptionClauseAssertsRole, tableColumnLabels, versionColumnTokens, OCCURRENCE_FORMS, HISTORICAL_RESOLUTION_ROW_RE, candidateKey, relatedValuesFromDescription } from './candidateHelpers.js';
@@ -37,7 +37,17 @@ export function readTypedTables(blocks, acc, ctx) {
   // Pass 0: typed indicator tables — every valid row is a source assertion with row provenance.
   for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
     const block = blocks[blockIndex];
-    if (block.type !== 'table' || !block.table) continue;
+    if (block.type !== 'table' || !block.table) {
+      // A list under a victim heading ("Recent breaches") likewise names
+      // breached organizations (tl-table-v24).
+      const victims = new Set();
+      for (const v of victimListingBlockValues(block)) {
+        const n = normalizeCandidateValue(v.refanged, v.candidate_type);
+        if (n?.ok) victims.add(`${n.candidateType}:${n.normalizedValue.toLowerCase()}`);
+      }
+      if (victims.size) referenceColumnValues.set(block.id, victims);
+      continue;
+    }
     const t = diagnostics.explicit_tables;
     t.tables_seen += 1;
     const interp = block.ioc_table;

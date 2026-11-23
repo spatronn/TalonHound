@@ -58,8 +58,8 @@ const H1 = hex('d4', 64);
 const K1 = hex('e5', 32);
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v74');
-  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v23');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v75');
+  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v24');
 });
 
 // --- FN-1 ---------------------------------------------------------------------
