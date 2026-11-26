@@ -68,7 +68,7 @@ const byValue = (x, v) => x.candidates.filter((c) => c.normalized_value === v);
 test('contract versions', () => {
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v76');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v22');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v30');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v31');
   assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v15');
   assert.equal(PUBLICATION_DATE_EXTRACTOR_VERSION, 'tl-published-at-v8');
 });

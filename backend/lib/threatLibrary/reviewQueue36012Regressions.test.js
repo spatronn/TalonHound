@@ -23,6 +23,9 @@
  * F. 36020 (Cyble Glitch SPY): "We also identified an additional Glitch SPY admin
  *    panel URL gich[.]etherraffleexchange[.]us" read as a passing mention, so the
  *    operator panel could not even be promoted.
+ * G. 36022 (HivePro SANSAR): "TOR Address | <v3>[.]onion[:]9051" was dropped
+ *    (not_hostname_syntax): domain typing re-read the source spelling with its
+ *    port. The report could not finalize (explicit_table_rows_dropped).
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -191,4 +194,17 @@ test('G: elided URL tokens and folded URL re-spellings are dispositioned, never 
   const rows = r.candidates.map((c) => ({ ...c, evidence: buildCandidateEvidenceRecord(c) }));
   const d = buildObservableDispositions({ candidates: rows, tokenLog: r.tokenLog, blocks: r.annotated?.blocks || [] });
   assert.equal(d.counts.undispositioned, 0, JSON.stringify(d.rows.filter((x) => x.reason_code === 'undispositioned_token').map((x) => x.raw_value)));
+});
+
+test('H: an onion host written with a defanged port in an IoC row is the row value', () => {
+  const onion = `${'a'.repeat(55)}d.onion`;
+  const r = extractHtml(`
+<h2>Indicators of Compromise (IoCs)</h2>
+<table>
+<tr><th>Type</th><th>Value</th></tr>
+<tr><td>TOR Address</td><td>${onion.replace('.onion', '[.]onion')}[:]9051</td></tr>
+<tr><td>SHA256</td><td>${'cd'.repeat(32)}</td></tr>
+</table>`);
+  assert.equal(member(r, 'domain', onion), true);
+  assert.equal(r.diagnostics?.explicit_tables?.inconsistent || false, false);
 });

@@ -80,7 +80,7 @@ test('contract versions', () => {
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v76');
   assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v15');
   assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v15');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v30');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v31');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v22');
   assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v17');
   assert.equal(EVIDENCE_INTEGRITY_VERSION, 'tl-evidence-integrity-v3');

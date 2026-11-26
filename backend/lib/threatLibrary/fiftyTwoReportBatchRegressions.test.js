@@ -56,7 +56,7 @@ test('versions: tl-candidates-v55, tl-section-tree-v15, tl-table-v18, tl-type-re
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v76');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v22');
   assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v24');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v30');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v31');
 });
 
 test('A. Acknowledgments under the IOC heading closes scope: citation links are references', () => {

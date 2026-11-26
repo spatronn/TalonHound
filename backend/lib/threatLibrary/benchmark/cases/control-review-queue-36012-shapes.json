@@ -20,7 +20,7 @@
   },
   "ground_truth": {
     "provenance": {
-      "method": "constructed from Need Review reports 36015 (Cyble HumanitarianBait C2 key/value tables), 36025 (HivePro Veil#Drop IoC URL row with an elided path), 36021 (ASEC Remcos translated stage table vs IoC appendix) and 36012 (Seqrite MacSync CDHash row), using the publishers' own values",
+      "method": "constructed from Need Review reports 36015 (Cyble HumanitarianBait C2 key/value tables), 36025 (HivePro Veil#Drop IoC URL row with an elided path), 36021 (ASEC Remcos translated stage table vs IoC appendix) 36022 (HivePro SANSAR TOR Address row with a defanged port) and 36012 (Seqrite MacSync CDHash row), using the publishers' own values",
       "verified_by": "construction + manual comparison with each publisher article",
       "verified_at": "2026-11-27",
       "notes": "Chrome/143.0.0.0 is a browser release; web-hosting.com is the VPS provider; the elided URL is a placeholder but its host is listed infrastructure; title-case body spellings are the appendix URLs; a CDHash is not a file digest."
@@ -54,6 +54,11 @@
       {
         "type": "sha256",
         "value": "9ff32f7c0108e9d27a3b491edf04827b6ca025f44db68aeadc44eeb97c9aab11",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "efxisnqldelyr5ra25oqfrsut54b34g26e7zrsiuupsoekjof2gho2id.onion",
         "assertion": "explicit"
       }
     ],

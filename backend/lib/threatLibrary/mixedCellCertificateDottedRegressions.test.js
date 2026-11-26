@@ -52,7 +52,7 @@ const codes = (x) => [...new Set(x.diagnostics.quality.warnings.map((w) => w.cod
 test('contracts bumped for the six-report audit fixes', () => {
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v76');
   assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v24');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v30');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v31');
 });
 
 // --- 1. Mixed cells -----------------------------------------------------------

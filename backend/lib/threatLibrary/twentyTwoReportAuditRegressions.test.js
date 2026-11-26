@@ -55,7 +55,7 @@ const BODY = '<h2>Technical Analysis</h2><p>The loader decrypts its configuratio
 
 test('contract versions', () => {
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v76');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v30');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v31');
 });
 
 // ------------------------------------------------- D-1. uncommon delegated TLDs

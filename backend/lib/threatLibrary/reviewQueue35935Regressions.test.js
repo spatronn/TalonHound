@@ -40,7 +40,7 @@ const EVELYN = 'aba7133f975a0788dd2728b4bbb1d7d948e50571a033a1e8f47a2691e98600c5
 test('review queue 35935 contracts', () => {
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v76');
   assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v24');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v30');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v31');
 });
 
 function extract(blocks) {

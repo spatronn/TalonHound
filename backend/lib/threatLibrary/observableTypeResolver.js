@@ -105,7 +105,7 @@ import { isValidIpAddress } from '../publicIp.js';
  * v29 (import audit 35890–35901 P1): an angle-bracket placeholder may carry a
  * colon ("<linkid:8>", "%3Clinkid:8%3E"). It is still a template, not a URL.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v30';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v31';
 
 const TITLE_CASE_TLD_HOST_RE = /^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[A-Z][a-z]{1,23}$/;
 const TITLE_CASE_TLD_HOST_GLOBAL_RE = /(?<![\w.-])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[A-Z][a-z]{1,23}(?![\w-])/g;
@@ -934,7 +934,9 @@ export function isRuntimeNamespace(labels) {
 
 export function resolveDottedToken(raw, ctx = {}) {
   const original = String(raw || '').trim().replace(/\.$/, '');
-  const refanged = (refangObservable(original) || original).replace(/\.$/, '');
+  // "host[.]onion[:]9051": a port glued to the source spelling of a host is the
+  // endpoint's port, not part of the name (tl-type-resolver-v31).
+  const refanged = (refangObservable(original) || original).replace(/\.$/, '').replace(/(\.[a-z][a-z0-9-]{1,62}):\d{1,5}$/i, '$1');
   const lower = refanged.toLowerCase();
   const labels = lower.split('.').filter(Boolean);
   const signals = {};
