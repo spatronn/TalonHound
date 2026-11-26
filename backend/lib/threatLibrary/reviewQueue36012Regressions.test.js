@@ -17,6 +17,9 @@
  * D. 36021 / 36052 (ASEC): a translated stage table re-spells IoC-appendix URLs
  *    in title case ("Hxxp://…/70/Img_201031[.]Png", "uc?Export=download"). Each
  *    became a second URL Indicator beside the appendix spelling.
+ * E. 36012 (Seqrite): an IoC row "CDHash | <40 hex> | Code Directory Hash" became
+ *    a SHA-1 sample. A code-directory hash digests the code signature, not the
+ *    file (tl-digest-v10).
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -26,6 +29,7 @@ import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtracti
 import { extractCanonicalDocumentFromHtml } from './extract/extractHtml.js';
 import { ipv4UserAgentVersion } from './ipv4VersionContext.js';
 import { elidedUrlHost, validateUrlCandidate } from './observableTypeResolver.js';
+import { classifyHexDigest, DIGEST_KINDS } from './digestSemantics.js';
 
 test('review queue 36012 contracts', () => {
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v76');
@@ -138,4 +142,20 @@ test('D: a title-case body re-spelling of an appendix URL joins the appendix ide
   const appendix = find(r, 'url', 'http://198.51.100.44/70/img_2010.png');
   assert.equal(isReportIndicatorMember(appendix), true);
   assert.ok((appendix.parsed?.case_variant_aliases || []).length >= 1);
+});
+
+test('E: a CDHash row is a code-signing digest, never a SHA-1 sample', () => {
+  const cd = 'c1'.repeat(20);
+  const sample = 'e7'.repeat(32);
+  const r = extractHtml(`
+<h2>Indicators of Compromise (IOCs)</h2>
+<table>
+<tr><th>Type</th><th>Value</th><th>Description</th></tr>
+<tr><td>SHA-256 Hash</td><td>${sample}</td><td>Native Mach-O stager binary</td></tr>
+<tr><td>CDHash</td><td>${cd}</td><td>Code Directory Hash</td></tr>
+</table>`);
+  assert.equal(member(r, 'sha256', sample), true);
+  assert.equal(member(r, 'sha1', cd), false);
+  assert.equal(classifyHexDigest(`CDHash | ${cd}`, cd).kind, DIGEST_KINDS.CERTIFICATE);
+  assert.equal(classifyHexDigest(`Code Directory hash: ${cd}`, cd).kind, DIGEST_KINDS.CERTIFICATE);
 });

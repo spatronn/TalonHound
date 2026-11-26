@@ -390,7 +390,8 @@ export {
  * standalone value; the host written in full before an elided URL path
  * ("hxxps://x[.]blogspot[.]com/…/a.sys") is the row's domain value (the URL
  * stays a placeholder); a body re-spelling of an appendix URL that differs only
- * in letter case ("Img_201031.Png", "uc?Export=") joins the appendix identity.
+ * in letter case ("Img_201031.Png", "uc?Export=") joins the appendix identity;
+ * a CDHash / code-directory hash row is a code-signing digest (tl-digest-v10).
  */
 export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v76';
 
