@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head><title>Review queue 36012 control: UA releases, provider rows, elided URL hosts, case-variant URLs, CDHash</title></head>
+<body>
+<article>
+<h1>Review queue 36012 control: UA releases, provider rows, elided URL hosts, case-variant URLs, CDHash</h1>
+<p>The operators delivered a loader through a decoy document, staged payloads on attacker-created blogs and ran a panel on a rented VPS.</p>
+
+<h2>C2 Infrastructure</h2>
+<p>The C2 server was confirmed live and serving the attacker's login panel.</p>
+<table><tr><td>C2 Server</td><td>hxxp://159.198.41[.]140</td></tr></table>
+<table><tr><td>Server Stack</td><td>nginx/1.24.0 on Ubuntu Linux, Flask 3.1.3 backend, Python 3.12.3</td></tr></table>
+<table><tr><td>Hosting Provider</td><td>Namecheap, Inc. (web-hosting.com VPS) – ASN 22612, Atlanta, GA, USA</td></tr></table>
+<table><tr><td>Upload Endpoint</td><td>/upload</td></tr></table>
+<table><tr><td>User-Agent Spoofed</td><td>Mozilla/5.0 (Windows NT 10.0; Win64; x64) … Chrome/143.0.0.0 … Edg/143.0.0.0</td></tr></table>
+
+<h2>Stage analysis</h2>
+<p>The script receives the C2 server address from which it downloads the RAT as an argument value.</p>
+<table>
+  <tr><td>Remcos RAT Download C2</td><td>Hxxp://172.245.209[.]133/70/Weprovideforbesthingstocomebackgoodthings.Hta</td></tr>
+  <tr><td>Steganography PNG Download C2</td><td>Hxxp://172.245.209.133/70/Img_201031[.]Png</td></tr>
+</table>
+
+<h2>Indicators of Compromise (IoCs)</h2>
+<table>
+  <thead><tr><th>Type</th><th>Value</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td>URLs</td><td><span><code>hxxps[:]//htlwub00klocate[.]blogspot[.]com/phud[.]dudus[.]docx[.]pdf[.]olp[.]sys</code></span> <span><code>hxxps[:]//cpyzaramay26[.]blogspot[.]com/…/niple[.]docx[.]odp[.]pdf[.]sys</code></span></td><td>Staging pages</td></tr>
+    <tr><td>URL</td><td>http[:]//172[.]245[.]209[.]133/70/img_201031[.]png</td><td>Steganography PNG</td></tr>
+    <tr><td>URL</td><td>http[:]//172[.]245[.]209[.]133/70/weprovideforbesthingstocomebackgoodthings[.]hta</td><td>HTA loader</td></tr>
+    <tr><td>SHA-256 Hash</td><td>9ff32f7c0108e9d27a3b491edf04827b6ca025f44db68aeadc44eeb97c9aab11</td><td>Native Mach-O Stager Binary</td></tr>
+    <tr><td>CDHash</td><td>d182eb7cba0ffa42d770d7b0d3499e49f24163a2</td><td>Code Directory Hash</td></tr>
+  </tbody>
+</table>
+</article>
+</body>
+</html>
