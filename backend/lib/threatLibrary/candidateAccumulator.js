@@ -780,7 +780,7 @@ export function createCandidateAccumulator(ctx) {
         for (const row of alias.table_rows || []) {
           if (target.table_rows.length < MAX_TABLE_ROWS_PER_CANDIDATE) target.table_rows.push(row);
         }
-        target.parsed.case_variant_aliases = [...(target.parsed.case_variant_aliases || []), alias.original_value || alias.normalized_value].slice(0, 8);
+        target.parsed.case_variant_aliases = [...new Set([...(target.parsed.case_variant_aliases || []), alias.normalized_value, alias.original_value].filter(Boolean))].slice(0, 8);
         for (const keys of urlHostIndex.values()) {
           if (keys.delete(key)) keys.add(candidateKey('url', target.normalized_value));
         }

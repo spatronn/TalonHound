@@ -21,7 +21,7 @@ import { normalizeCandidateValue } from './candidateValue.js';
  * v2: a digest-shaped token that is a whole label of an accounted hostname
  * ("<32 hex>.loophole.site") is part of that value, not a lost hash.
  */
-export const OBSERVABLE_DISPOSITION_VERSION = 'tl-dispositions-v2';
+export const OBSERVABLE_DISPOSITION_VERSION = 'tl-dispositions-v3';
 
 export const DISPOSITIONS = Object.freeze({
   ACCEPTED: 'accepted',
@@ -136,6 +136,9 @@ export function buildObservableDispositions({ candidates = [], tokenLog = [], bl
     const verdict = candidateDisposition(c);
     note(c.normalized_value);
     note(c.original_value);
+    // Spellings folded into this identity (scheme-less "host/path", a
+    // case-variant body re-spelling) are this candidate's tokens too.
+    for (const a of [...(c.parsed?.scheme_less_aliases || []), ...(c.parsed?.case_variant_aliases || [])]) note(a);
     const occurrences = Array.isArray(c.occurrences) && c.occurrences.length
       ? c.occurrences
       : Array.isArray(ev.occurrences) ? ev.occurrences : [];
@@ -227,14 +230,17 @@ export function buildObservableDispositions({ candidates = [], tokenLog = [], bl
       const residue = t.type === 'defang_residue';
       // "https://host/{campaign}" is a URL template, not a value.
       const template = t.type === 'url' && /[{}]|%7b|\$\{|<[^>]*>/i.test(value);
-      if (!residue && !template) counts.undispositioned += 1;
+      // "https://host/…/file": the publisher elided part of the value — a
+      // placeholder (its host, when listed, is its own candidate).
+      const elided = t.type === 'url' && /…|\[\s*(?:\.{2,}|…)\s*\]/.test(value);
+      if (!residue && !template && !elided) counts.undispositioned += 1;
       push({
         source_kind: 'document',
         observable_type: t.type,
         raw_value: bounded(t.value, MAX_RAW_CHARS),
         normalized_value: residue ? null : bounded(value, MAX_RAW_CHARS),
-        disposition: residue ? DISPOSITIONS.NEEDS_REVIEW : template ? DISPOSITIONS.INVALID : DISPOSITIONS.REJECTED,
-        reason_code: residue ? 'unresolved_defang_spelling' : template ? 'url_template_placeholder' : 'undispositioned_token',
+        disposition: residue ? DISPOSITIONS.NEEDS_REVIEW : template || elided ? DISPOSITIONS.INVALID : DISPOSITIONS.REJECTED,
+        reason_code: residue ? 'unresolved_defang_spelling' : template ? 'url_template_placeholder' : elided ? 'elided_value_placeholder' : 'undispositioned_token',
         rule_id: `reconcile:${OBSERVABLE_DISPOSITION_VERSION}`,
         block_id: b.id || null,
         section_path: Array.isArray(b.section_path) ? b.section_path.slice(0, 8) : [],

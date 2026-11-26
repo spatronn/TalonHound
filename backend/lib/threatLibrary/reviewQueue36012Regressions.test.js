@@ -175,3 +175,20 @@ test('F: a value named as a malware admin panel URL is an operational mention, r
   const p = find(plain, 'domain', 'news-portal.example');
   assert.ok(!p || !(p.occurrences || []).some((o) => o.source_relation === 'operational_malicious'));
 });
+
+test('G: elided URL tokens and folded URL re-spellings are dispositioned, never silent', async () => {
+  const { buildObservableDispositions } = await import('./observableDispositions.js');
+  const { buildCandidateEvidenceRecord } = await import('./evidencePolicy.js');
+  const html = `
+<h2>Analysis</h2>
+<table><tr><td>Payload Download C2</td><td>Hxxp://drive.Example-Files[.]Com/uc?Export=download&amp;id=AbC123xYz</td></tr></table>
+<h2>Indicators of Compromise (IoCs)</h2>
+<table>
+<tr><th>Type</th><th>Value</th></tr>
+<tr><td>URLs</td><td><code>hxxps[:]//stageb-blog[.]blogspot[.]com/…/two[.]docx[.]pdf[.]sys</code> <code>https[:]//drive[.]example-files[.]com/uc?export=download&amp;id=AbC123xYz</code></td></tr>
+</table>`;
+  const r = extractHtml(html);
+  const rows = r.candidates.map((c) => ({ ...c, evidence: buildCandidateEvidenceRecord(c) }));
+  const d = buildObservableDispositions({ candidates: rows, tokenLog: r.tokenLog, blocks: r.annotated?.blocks || [] });
+  assert.equal(d.counts.undispositioned, 0, JSON.stringify(d.rows.filter((x) => x.reason_code === 'undispositioned_token').map((x) => x.raw_value)));
+});

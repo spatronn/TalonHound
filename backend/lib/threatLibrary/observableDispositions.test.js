@@ -129,8 +129,8 @@ test('discarded page regions are inventoried by kind with their observable token
   assert.ok(!JSON.stringify(regions).includes('<textarea'));
 });
 
-test('a digest-shaped label of an accounted hostname is part of that value, not a lost hash (tl-dispositions-v2)', () => {
-  assert.equal(OBSERVABLE_DISPOSITION_VERSION, 'tl-dispositions-v2');
+test('a digest-shaped label of an accounted hostname is part of that value, not a lost hash (tl-dispositions-v3)', () => {
+  assert.equal(OBSERVABLE_DISPOSITION_VERSION, 'tl-dispositions-v3');
   const label = '5ede4fc5ae051d7b1601142d283755e4';
   const r = extract(`<h2>Indicators of Compromise</h2><ul><li>${label}.loophole[.]site</li><li>tunnel-relay[.]example-c2.net</li></ul>`);
   assert.ok(r.rows.some((c) => c.normalized_value === `${label}.loophole.site`), JSON.stringify(r.rows.map((c) => c.normalized_value)));
