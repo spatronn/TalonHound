@@ -7,6 +7,8 @@
  * identities that actually materialized.
  */
 
+import { maskUserAgentReleases } from './ipv4VersionContext.js';
+
 export const DROPPED_ASSERTED_LIMIT = 40;
 export const MISSING_IDENTITIES_LIMIT = 40;
 
@@ -137,7 +139,8 @@ export function structuralCompleteness(blocks, candidates) {
     // the table was read, and its values are deliberately Context Only
     // (tl-table-v23), not left to the model.
     if (victimListingOnly(interp)) continue;
-    const shapes = iocShapeCount(b.text);
+    // A User-Agent release ("Chrome/143.0.0.0") is not an IOC-shaped value.
+    const shapes = iocShapeCount(maskUserAgentReleases(b.text));
     const curated = CURATED_ZONES.has(String(b.zone || ''));
     const indicatorHeader = Array.isArray(interp?.columns) && interp.columns.some((c) => c.method === 'header_unverified');
     if (!shapes || (!curated && !indicatorHeader)) continue;

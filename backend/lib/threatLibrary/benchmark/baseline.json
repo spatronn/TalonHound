@@ -1,20 +1,20 @@
 {
   "versions": {
-    "candidates": "tl-candidates-v75",
+    "candidates": "tl-candidates-v76",
     "zones": "tl-zones-v20",
     "tables": "tl-table-v24",
-    "type_resolver": "tl-type-resolver-v30",
+    "type_resolver": "tl-type-resolver-v31",
     "html": "threat_library_html_v15",
     "pdf": "threat_library_pdf_v9",
     "quality": "tl-quality-v17",
     "metrics": "tl-benchmark-metrics-v2"
   },
   "aggregate": {
-    "cases": 117,
-    "cases_exact": 115,
+    "cases": 118,
+    "cases_exact": 116,
     "indicators": {
-      "expected": 1646,
-      "tp": 1644,
+      "expected": 1653,
+      "tp": 1651,
       "fp": 0,
       "fn": 2,
       "fn_not_extracted": 0,
@@ -28,7 +28,7 @@
     "candidate_extraction_recall": 0.9994,
     "context_only_accuracy": 1,
     "legitimate_exclusion_accuracy": 1,
-    "assertion_accuracy": 0.9708,
+    "assertion_accuracy": 0.971,
     "section_accuracy": 1,
     "non_indicators_promoted": 0,
     "ai_dependent_entries": 15,
@@ -36,9 +36,9 @@
     "quality": {
       "high": 0,
       "warning": 3,
-      "info": 35,
+      "info": 36,
       "cases_flagged": 3,
-      "exact_cases": 115,
+      "exact_cases": 116,
       "exact_cases_flagged": 3,
       "failing_cases": 2,
       "failing_cases_flagged": 0
@@ -574,6 +574,30 @@
       "warning_codes": [
         "non_file_digest_reclassified",
         "reference_column_values_context"
+      ]
+    },
+    "control-review-queue-36012-shapes": {
+      "members": [
+        "domain:cpyzaramay26.blogspot.com",
+        "domain:efxisnqldelyr5ra25oqfrsut54b34g26e7zrsiuupsoekjof2gho2id.onion",
+        "sha256:9ff32f7c0108e9d27a3b491edf04827b6ca025f44db68aeadc44eeb97c9aab11",
+        "url:http://159.198.41.140/",
+        "url:http://172.245.209.133/70/img_201031.png",
+        "url:http://172.245.209.133/70/weprovideforbesthingstocomebackgoodthings.hta",
+        "url:https://htlwub00klocate.blogspot.com/phud.dudus.docx.pdf.olp.sys"
+      ],
+      "tp": 7,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 7,
+      "assertions_checked": 7,
+      "warning_codes": [
+        "non_file_digest_reclassified"
       ]
     },
     "control-streaming-ssr-fallback-root": {

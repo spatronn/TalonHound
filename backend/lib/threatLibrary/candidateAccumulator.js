@@ -10,7 +10,7 @@ import { resolveDottedTokenType, hostnameFromUrl } from './candidateTyping.js';
 import { normalizeCandidateValue } from './candidateValue.js';
 import { refangObservable } from './defang.js';
 import { isCredentialLabeledHex, isIndicatorRowShape, lineContainingObservable, tableRowProviderOwnedByOperation, valueListedInDeclaration } from './indicatorScope.js';
-import { FILE_EXT_HINT, NON_NETWORK_RESOLVED_TYPES, RESOLVED_TYPES, buildTypeResolutionRecord, hasDelegatedDnsSuffix, isMutexLabeledValue, parseArtifactTypeLabel } from './observableTypeResolver.js';
+import { FILE_EXT_HINT, NON_NETWORK_RESOLVED_TYPES, RESOLVED_TYPES, buildTypeResolutionRecord, elidedUrlHost, hasDelegatedDnsSuffix, isMutexLabeledValue, parseArtifactTypeLabel } from './observableTypeResolver.js';
 import { isOnlyEmbeddedInDnsHostname } from './sourceOccurrence.js';
 import { isDescriptionColumnMention } from './tableSemantics.js';
 import { DIGEST_KINDS, NON_FILE_DIGEST_KINDS, classifyHexDigest, coreferencedObjectDigest, digestRowLabel } from './digestSemantics.js';
@@ -319,6 +319,31 @@ export function createCandidateAccumulator(ctx) {
   const pendingDotted = new Map();
 
   /**
+   * "hxxps://name[.]blogspot[.]com/…/file.pdf.sys" in a publisher IOC row: the
+   * path is elided, so the URL is a placeholder (tl-type-resolver-v4) — but
+   * the host before the elision is written in full and is the listed
+   * infrastructure. It becomes a domain occurrence of the same row; the URL is
+   * never reconstructed. Only inside a curated IOC scope, only an absolute
+   * URL, and only when the elision starts after the host's first "/"
+   * (tl-candidates-v76).
+   */
+  function addElidedUrlHost(raw, block, extra) {
+    if (!STRONG_IOC_ZONES.has(block?.zone || '')) return;
+    const host = elidedUrlHost(raw);
+    if (!host) return;
+    const before = lastAddRejection;
+    add(host, 'domain', block, {
+      form: extra.form,
+      tableRow: extra.tableRow,
+      rowText: extra.rowText,
+      typeLabel: extra.typeLabel,
+      explicitTable: extra.explicitTable,
+      typing: { typing_reason: 'elided_url_host' }
+    });
+    lastAddRejection = before;
+  }
+
+  /**
    * @param {string} raw
    * @param {string|null} hintType
    * @param {object} block
@@ -332,6 +357,7 @@ export function createCandidateAccumulator(ctx) {
       lastAddRejection = n.error || 'unrecognized';
       countReason(typeDiag.rejected_values, lastAddRejection);
       noteRejectedToken(raw, hintType, block, lastAddRejection, 'invalid');
+      if (lastAddRejection === 'elided_value') addElidedUrlHost(raw, block, extra);
       return null;
     }
     if (extra.referenceCell !== true &&
@@ -711,6 +737,59 @@ export function createCandidateAccumulator(ctx) {
     }
   }
 
+  /**
+   * One resource re-spelled with different letter case in the body
+   * ("Hxxp://172.245.209[.]133/70/Img_201031[.]Png" in a translated stage
+   * table, "uc?Export=download") and written by the publisher in its IoC
+   * appendix ("http[:]//…/img_201031[.]png", "uc?export=download") is the
+   * appendix identity. Only when host + path + query are equal ignoring case
+   * but differ in case, the appendix spelling is the only one carrying an
+   * appendix-zone occurrence, and exactly one appendix spelling matches. The
+   * body occurrences join it (their role / evidence are kept); a scheme that
+   * differs only together with the case re-spelling follows the appendix
+   * (tl-candidates-v76).
+   */
+  function foldCaseVariantUrlAliases() {
+    const APPENDIX_ZONES = new Set(['explicit_ioc_section', 'sample_table']);
+    const inAppendix = (e) => APPENDIX_ZONES.has(e.zone) || (e.occurrences || []).some((o) => APPENDIX_ZONES.has(o.zone));
+    const rest = (v) => String(v || '').replace(URL_SCHEME_PREFIX_RE, '');
+    /** case-folded host/path/query → URL entries */
+    const groups = new Map();
+    for (const entry of byKey.values()) {
+      if (entry.candidate_type !== 'url' || !URL_SCHEME_PREFIX_RE.test(entry.normalized_value)) continue;
+      const id = rest(entry.normalized_value).toLowerCase();
+      if (!groups.has(id)) groups.set(id, []);
+      groups.get(id).push(entry);
+    }
+    for (const entries of groups.values()) {
+      if (entries.length < 2) continue;
+      const appendix = entries.filter(inAppendix);
+      if (appendix.length !== 1) continue;
+      const target = appendix[0];
+      for (const alias of entries) {
+        if (alias === target || inAppendix(alias)) continue;
+        // Same case → a scheme-only difference, which stays ambiguous and as written.
+        if (rest(alias.normalized_value) === rest(target.normalized_value)) continue;
+        const key = candidateKey('url', alias.normalized_value);
+        for (const occ of alias.occurrences) {
+          const dup = target.occurrences.some(
+            (o) => o.block_id && o.block_id === occ.block_id && (o.table_row == null || o.table_row === occ.table_row)
+          );
+          if (!dup) target.occurrences.push({ ...occ, case_variant_spelling: alias.original_value || alias.normalized_value });
+        }
+        for (const row of alias.table_rows || []) {
+          if (target.table_rows.length < MAX_TABLE_ROWS_PER_CANDIDATE) target.table_rows.push(row);
+        }
+        target.parsed.case_variant_aliases = [...new Set([...(target.parsed.case_variant_aliases || []), alias.normalized_value, alias.original_value].filter(Boolean))].slice(0, 8);
+        for (const keys of urlHostIndex.values()) {
+          if (keys.delete(key)) keys.add(candidateKey('url', target.normalized_value));
+        }
+        explicitTableAssertions.rememberAlias('url', alias.normalized_value, target.normalized_value);
+        byKey.delete(key);
+      }
+    }
+  }
+
   return {
     byKey,
     urlHostIndex,
@@ -724,6 +803,7 @@ export function createCandidateAccumulator(ctx) {
     resolveTruncatedDigests,
     resolvePendingDotted,
     foldSchemeLessUrlAliases,
+    foldCaseVariantUrlAliases,
     lastRejection: () => lastAddRejection
   };
 }

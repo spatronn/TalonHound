@@ -598,8 +598,11 @@ export function assessExtractionQuality(input) {
   // A row the publisher itself calls a legitimate / benign component is
   // excluded on purpose (row-level benign assertion), not lost.
   // Reserved / loopback / link-local values (a YARA string "169.254.0.1") are
-  // never Indicators either, so a table holding them lost nothing.
+  // never Indicators either, so a table holding them lost nothing. Nor does a
+  // row whose label names the value's provider ("Hosting Provider | …
+  // (web-hosting.com VPS)", tl-candidates-v76).
   const deliberatelyExcluded = (c) => [
+    'context_only_provider_service',
     'context_only_benign_component',
     'context_only_reserved_address',
     'context_only_non_actionable_local',

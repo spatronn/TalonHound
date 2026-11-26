@@ -59,7 +59,9 @@ const KIND_PATTERNS = [
   [DIGEST_KINDS.BUILD_ID, /(?:^|[^a-z0-9])(?:gnu[\s_-]*)?build[\s_-]*id(?:\[[^\]]*\])?(?:[^a-z0-9]|$)/i],
   [
     DIGEST_KINDS.CERTIFICATE,
-    /(?:^|[^a-z0-9])(?:certificates?|certs?|x\.?509|thumbprints?|signing\s+(?:cert|key|identity)|code[\s-]*signing|ja[34]s?|jarm|spki|subject\s+public\s+key\s+info|serial(?:\s*(?:number|no\.?|#))?)(?:[^a-z0-9]|$)/i
+    // An Apple code-directory hash ("CDHash") digests the code signature's
+    // directory, never the file: a code-signing identity (tl-digest-v10).
+    /(?:^|[^a-z0-9])(?:certificates?|certs?|x\.?509|thumbprints?|signing\s+(?:cert|key|identity)|code[\s-]*signing|cdhash(?:es)?|code[\s-]*directory(?:\s+hash(?:es)?)?|ja[34]s?|jarm|spki|subject\s+public\s+key\s+info|serial(?:\s*(?:number|no\.?|#))?)(?:[^a-z0-9]|$)/i
   ],
   [
     DIGEST_KINDS.SIMILARITY,

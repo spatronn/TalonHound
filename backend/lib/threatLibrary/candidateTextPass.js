@@ -7,7 +7,7 @@ import { isValidIpAddress } from '../publicIp.js';
 import { STRONG_IOC_ZONES } from './documentZones.js';
 import { hostnameFromUrl, pathBasenameFromUrl } from './candidateTyping.js';
 import { findTruncatedDigests } from './tableSemantics.js';
-import { ipv4VersionContext } from './ipv4VersionContext.js';
+import { ipv4VersionContext, ipv4UserAgentVersion } from './ipv4VersionContext.js';
 import { lineContainingObservable } from './indicatorScope.js';
 import { RESOLVED_TYPES, templateUrlSpanEnd, trimUrlBoundary, validateUrlCandidate } from './observableTypeResolver.js';
 import { hexRunIsHostnameLabelFragment, hexRunIsIdentifierSuffix, ipv4MatchIsStandalone } from './sourceOccurrence.js';
@@ -279,7 +279,9 @@ export function readDocumentText(blocks, acc, ctx) {
           typing: { typing_reason: 'version_column', artifact_kind: 'metadata' }
         });
       } else {
-        const version = proseVersions ? ipv4VersionContext(text, start, end, { code: block.type === 'code', knownVersions: blockVersions }) : null;
+        const version = proseVersions
+          ? ipv4VersionContext(text, start, end, { code: block.type === 'code', knownVersions: blockVersions })
+          : ipv4UserAgentVersion(text, start);
         if (version) {
           blockVersions.add(raw);
           // A release number in prose ("Apache Struts 2.3.24.1 is vulnerable") is

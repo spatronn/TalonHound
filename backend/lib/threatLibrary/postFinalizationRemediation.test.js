@@ -30,7 +30,7 @@ import { extractGenericArticleDocument, THREAT_LIBRARY_HTML_EXTRACTOR_VERSION } 
 import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtraction.js';
 
 test('post-finalization remediation contracts', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v75');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v76');
   assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v15');
   assert.ok(CREATABLE_IOC_TYPES.includes('email'));
 });

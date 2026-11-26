@@ -25,6 +25,7 @@ import {
   FILE_EXT_HINT,
   NON_NETWORK_RESOLVED_TYPES,
   hasDelegatedDnsSuffix,
+  elidedUrlHost,
   isPublicOrSharedPlatformSuffix,
   trimUrlBoundary
 } from './observableTypeResolver.js';
@@ -863,6 +864,23 @@ function parseIndicatorCellValues(cellText, declared = null, ctx = {}) {
       }
     }
     if (!parsed) continue;
+    // "hxxps://name[.]blogspot[.]com/…/file.sys": the elided URL is a
+    // placeholder, but the host the publisher wrote in full is the row's
+    // value — a domain, never a reconstructed URL (tl-candidates-v76).
+    if (!parsed.ok && parsed.error === 'elided_value') {
+      const host = elidedUrlHost(rawTok);
+      const hostParsed = host ? parseToken(host, null, ctx) : null;
+      if (hostParsed?.ok && hostParsed.candidate_type === 'domain') {
+        const key = `domain\0${hostParsed.normalized_value}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          // The host's own spelling ("cpyzaramay26[.]blogspot[.]com"): the
+          // authority of the source token, scheme and elided path dropped.
+          const spelled = String(aligned ? sourceTokens[i] : rawTok).replace(/^[^/]*\/\//, '').split('/')[0];
+          values.push({ ...hostParsed, raw: spelled || host, typing_reason: 'elided_url_host', elided_url: rawTok });
+        }
+      }
+    }
     if (parsed.ok && aligned) parsed = { ...parsed, raw: tok === rawTok ? sourceTokens[i] : tok };
     if (parsed.ok) {
       const key = `${parsed.candidate_type}\0${parsed.normalized_value}`;

@@ -61,7 +61,7 @@ function runHtml(html, url = SOURCE) {
 }
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v75');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v76');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v22');
   assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v15');
   assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v15');

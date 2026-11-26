@@ -64,9 +64,9 @@ const members = (x) =>
 const has = (x, type, value) => x.candidates.some((c) => c.candidate_type === type && c.normalized_value === value);
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v75');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v76');
   assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v24');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v30');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v31');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v22');
 });
 

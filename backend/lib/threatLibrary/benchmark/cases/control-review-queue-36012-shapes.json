@@ -1,0 +1,91 @@
+{
+  "id": "control-review-queue-36012-shapes",
+  "title": "Control: User-Agent release in a C2 row, hosting-provider row, elided IoC URL host, title-case body URL re-spelling, CDHash row",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": [
+    "control",
+    "review_queue_36012",
+    "user_agent_release",
+    "provider_row_label",
+    "elided_url_host",
+    "case_variant_url",
+    "digest_row_label",
+    "mode_a"
+  ],
+  "source": {
+    "kind": "html_file",
+    "path": "control-review-queue-36012-shapes.html",
+    "url": "https://research.example/blog/review-queue-36012-control/"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed from Need Review reports 36015 (Cyble HumanitarianBait C2 key/value tables), 36025 (HivePro Veil#Drop IoC URL row with an elided path), 36021 (ASEC Remcos translated stage table vs IoC appendix) 36022 (HivePro SANSAR TOR Address row with a defanged port) and 36012 (Seqrite MacSync CDHash row), using the publishers' own values",
+      "verified_by": "construction + manual comparison with each publisher article",
+      "verified_at": "2026-11-27",
+      "notes": "Chrome/143.0.0.0 is a browser release; web-hosting.com is the VPS provider; the elided URL is a placeholder but its host is listed infrastructure; title-case body spellings are the appendix URLs; a CDHash is not a file digest."
+    },
+    "indicators": [
+      {
+        "type": "url",
+        "value": "http://159.198.41.140/",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://htlwub00klocate.blogspot.com/phud.dudus.docx.pdf.olp.sys",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "cpyzaramay26.blogspot.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://172.245.209.133/70/img_201031.png",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://172.245.209.133/70/weprovideforbesthingstocomebackgoodthings.hta",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "9ff32f7c0108e9d27a3b491edf04827b6ca025f44db68aeadc44eeb97c9aab11",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "efxisnqldelyr5ra25oqfrsut54b34g26e7zrsiuupsoekjof2gho2id.onion",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      {
+        "type": "ip",
+        "value": "143.0.0.0"
+      },
+      {
+        "type": "domain",
+        "value": "web-hosting.com"
+      },
+      {
+        "type": "url",
+        "value": "http://172.245.209.133/70/Img_201031.Png"
+      },
+      {
+        "type": "url",
+        "value": "http://172.245.209.133/70/Weprovideforbesthingstocomebackgoodthings.Hta"
+      },
+      {
+        "type": "sha1",
+        "value": "d182eb7cba0ffa42d770d7b0d3499e49f24163a2"
+      }
+    ],
+    "sections": []
+  }
+}
