@@ -20,6 +20,9 @@
  * E. 36012 (Seqrite): an IoC row "CDHash | <40 hex> | Code Directory Hash" became
  *    a SHA-1 sample. A code-directory hash digests the code signature, not the
  *    file (tl-digest-v10).
+ * F. 36020 (Cyble Glitch SPY): "We also identified an additional Glitch SPY admin
+ *    panel URL gich[.]etherraffleexchange[.]us" read as a passing mention, so the
+ *    operator panel could not even be promoted.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -158,4 +161,17 @@ test('E: a CDHash row is a code-signing digest, never a SHA-1 sample', () => {
   assert.equal(member(r, 'sha1', cd), false);
   assert.equal(classifyHexDigest(`CDHash | ${cd}`, cd).kind, DIGEST_KINDS.CERTIFICATE);
   assert.equal(classifyHexDigest(`Code Directory hash: ${cd}`, cd).kind, DIGEST_KINDS.CERTIFICATE);
+});
+
+test('F: a value named as a malware admin panel URL is an operational mention, reviewable', () => {
+  const r = extractHtml(`
+<h2>Command and control</h2>
+<p>During analysis, the malware was observed communicating with the C&amp;C domain panel-primary[.]example. Accessing the C&amp;C infrastructure revealed an admin login panel branded with the malware name. We also identified an additional admin panel URL panel-secondary[.]example.</p>`);
+  const c = find(r, 'domain', 'panel-secondary.example');
+  assert.ok(c);
+  assert.ok((c.occurrences || []).some((o) => o.source_relation === 'operational_malicious'), JSON.stringify(c.occurrences?.map((o) => o.source_relation)));
+  // A bare narrative mention of another host in the same paragraph stays contextual.
+  const plain = extractHtml('<h2>Background</h2><p>The researchers compared the kit with news-portal[.]example and other unrelated sites.</p>');
+  const p = find(plain, 'domain', 'news-portal.example');
+  assert.ok(!p || !(p.occurrences || []).some((o) => o.source_relation === 'operational_malicious'));
 });
