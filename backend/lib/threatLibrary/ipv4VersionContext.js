@@ -74,6 +74,32 @@ const LABEL_ROW_AFTER_RE = /^\s*:(?!\d)/;
 /** A product name: one word with lower-case letters (Struts, OpenSSL, WebLogic), not a role noun. */
 const PRODUCT_WORD_BEFORE_RE = /(?:^|[\s(])([A-Z][A-Za-z0-9+._-]*[a-z][A-Za-z0-9+._-]*)\s+\(?\s*$/;
 
+/**
+ * A User-Agent product token glued to the token ("Chrome/143.0.0.0") is a
+ * browser / engine release in any block — prose, a key/value row or an IOC
+ * table ("User-Agent Spoofed | Mozilla/5.0 … Chrome/143.0.0.0 …"). The
+ * `Product/` prefix is the token's own syntax, so no zone can turn it into an
+ * address (tl-candidates-v76).
+ * @param {string} text refanged block text
+ * @param {number} start token start
+ */
+export function ipv4UserAgentVersion(text, start) {
+  return UA_PRODUCT_BEFORE_RE.test(clauseBefore(String(text || ''), start)) ? { kind: 'version', cue: 'user_agent_product' } : null;
+}
+
+const UA_PRODUCT_RELEASE_RE =
+  /((?:^|[\s(;,])(?:Chrome|Chromium|CriOS|Firefox|FxiOS|Safari|Version|Edg|EdgA|EdgiOS|Edge|OPR|Opera|YaBrowser|SamsungBrowser|UCBrowser|AppleWebKit|Gecko|Trident|MSIE|Electron|Brave|Vivaldi|Mobile)\/)\d{1,3}(?:\.\d{1,5}){3}(?![\d.])/gi;
+
+/**
+ * Text with every User-Agent product release ("Chrome/143.0.0.0") replaced by
+ * a non-address placeholder — for counters that read IOC shapes off raw block
+ * text (tl-candidates-v76).
+ * @param {string} text
+ */
+export function maskUserAgentReleases(text) {
+  return String(text || '').replace(UA_PRODUCT_RELEASE_RE, '$1release');
+}
+
 /** Clause boundaries: sentence ends, semicolons, table cells / rows, line breaks. */
 function clauseBefore(text, start, max = 90) {
   const head = text.slice(Math.max(0, start - max), start);

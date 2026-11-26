@@ -34,7 +34,7 @@ const FILE = '167ce57ef59a32a6a0ef4137785828077879092d7f83ddbc1755d6e69116e0ad';
 const RAT = 'c8cb3f6d5b90c46686d2bf531dc1a5786e27edc5';
 
 test('historical digest contracts', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v75');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v76');
 });
 
 function extract(blocks) {

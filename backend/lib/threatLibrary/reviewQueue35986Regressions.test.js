@@ -31,7 +31,7 @@ import { extractCanonicalDocumentFromHtml } from './extract/extractHtml.js';
 import { detectReportPublicationDate, extractHtmlPublicationDate, PUBLICATION_DATE_EXTRACTOR_VERSION } from './publicationDate.js';
 
 test('review queue 35986 contracts', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v75');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v76');
   assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v24');
   assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v15');
   assert.equal(PUBLICATION_DATE_EXTRACTOR_VERSION, 'tl-published-at-v8');

@@ -57,7 +57,7 @@ ${rows.map(([v, d]) => `<tr><td>${v}</td><td>${d}</td></tr>`).join('\n')}
 </tbody></table>`;
 
 test('versions: tl-candidates-v39 / tl-table-v11 / tl-quality-v13', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v75');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v76');
   assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v24');
   assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v17');
   assert.equal(isFilenameDomainCollisionSuffix('back.pl'), true);

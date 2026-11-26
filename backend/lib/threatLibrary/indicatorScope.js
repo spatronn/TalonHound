@@ -1699,7 +1699,10 @@ export function classifySourceRelationDetail(surroundingText, opts = {}) {
     // A two-column row whose label names the service the value belongs to
     // ("Registrars | … (www[.]net[.]cn)") lists a registrar / host / CA, not
     // operator infrastructure (tl-candidates-v66).
-    if (structuralRow && form === 'table_row' && rowLabelNamesServiceRole(full)) {
+    // The same holds for a key/value table whose rows are read as standalone
+    // values ("Hosting Provider | Namecheap, Inc. (web-hosting.com VPS) – ASN …",
+    // tl-candidates-v76).
+    if (structuralRow && (form === 'table_row' || (form === 'standalone' && opts.layout === 'table')) && rowLabelNamesServiceRole(full)) {
       return { relation: SOURCE_RELATIONS.PROVIDER_SERVICE, marker: 'provider', authoritative, structural_row: true };
     }
     // "162.220.232.0 (Railway.com) | IP Range | …": the parenthesised host is

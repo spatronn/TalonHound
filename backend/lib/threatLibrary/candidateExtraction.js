@@ -383,8 +383,16 @@ export {
  * breaches") is a victim listing; a row label ("Commits", "Docker digests",
  * "SPKI SHA256", "Certificate Serial") governs every digest of its row; a
  * labelled IOC line with no space after the colon is a row.
+ * v76 (review queue 36012-36053): a dotted quad glued to a User-Agent product
+ * token ("Chrome/143.0.0.0") is a release number in every zone and row; a
+ * key/value row labelled with a service role ("Hosting Provider | Namecheap
+ * (web-hosting.com VPS)") lists a provider, also when the row is read as a
+ * standalone value; the host written in full before an elided URL path
+ * ("hxxps://x[.]blogspot[.]com/…/a.sys") is the row's domain value (the URL
+ * stays a placeholder); a body re-spelling of an appendix URL that differs only
+ * in letter case ("Img_201031.Png", "uc?Export=") joins the appendix identity.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v75';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v76';
 
 import { normalizeObservable } from '../observable-normalization.js';
 import { refangObservable, refangTextForExtraction } from './defang.js';
@@ -493,7 +501,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     extractionVersion: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION,
     objectIdentifiers: documentObjectIdentifiers(blocks)
   });
-  const { byKey, urlHostIndex, countReason, rememberExample, resolveTruncatedDigests, resolvePendingDotted, foldSchemeLessUrlAliases } = acc;
+  const { byKey, urlHostIndex, countReason, rememberExample, resolveTruncatedDigests, resolvePendingDotted, foldSchemeLessUrlAliases, foldCaseVariantUrlAliases } = acc;
 
   // Publisher stance about a whole list ("These endpoints are legitimate …").
   annotateListStances(blocks);
@@ -553,6 +561,9 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   // the publisher wrote (no scheme is invented). When both http and https
   // spellings exist the scheme is ambiguous and the value stays as written.
   foldSchemeLessUrlAliases();
+  // A body re-spelling of an appendix URL that differs only in letter case
+  // (translated stage tables: "Img_201031.Png") joins the appendix identity.
+  foldCaseVariantUrlAliases();
 
   // Incomplete path prefixes of sibling URLs (…/t/ when …/t/abc exists).
   markIncompleteUrlPrefixes(byKey);

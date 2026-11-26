@@ -739,6 +739,24 @@ export function trimUrlBoundary(urlish) {
 }
 
 /**
+ * The host of an absolute URL whose PATH the publisher elided
+ * ("hxxps://name[.]blogspot[.]com/…/file.pdf.sys"). The URL itself stays a
+ * placeholder (elided_value); the host before the elision is written in full.
+ * Returns null when the elision touches the host, when the value has no
+ * scheme or path, or when the host is an IP literal (tl-candidates-v76).
+ * @param {string} raw
+ * @returns {string|null}
+ */
+export function elidedUrlHost(raw) {
+  const refanged = refangObservable(String(raw || '')) || '';
+  const m = /^[a-z][a-z0-9+.-]*:\/\/([^/\s?#]+)\/(.*)$/i.exec(refanged);
+  if (!m || !ELIDED_VALUE_RE.test(m[2])) return null;
+  const host = m[1].replace(/:\d{1,5}$/, '').replace(/\.$/, '').toLowerCase();
+  if (!host || ELIDED_VALUE_RE.test(host) || /[[\]()]|\.{2}/.test(host) || isValidIpAddress(host)) return null;
+  return isHostnameSyntax(host) ? host : null;
+}
+
+/**
  * Validate a candidate URL value. Only an absolute URL (scheme + valid host)
  * is a network URL; relative paths, routes and filesystem paths are kept as
  * non-network artifacts with the path and any prose-stated port preserved as
